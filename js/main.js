@@ -1,4 +1,5 @@
 import { LofiEngine } from './engine.js';
+import { chordLabel, romanLabel } from './theory.js';
 
 const engine = new LofiEngine();
 
@@ -9,7 +10,7 @@ const chordEl = document.getElementById('chord-info');
 
 engine.onChordChange = (chord, key) => {
   keyEl.textContent = key;
-  chordEl.textContent = `${chord.root} ${chord.quality}`;
+  chordEl.textContent = chordLabel(chord);
 };
 
 startBtn.addEventListener('click', async () => {
@@ -17,11 +18,17 @@ startBtn.addEventListener('click', async () => {
     engine.stop();
     startBtn.textContent = 'start';
     statusEl.textContent = 'stopped';
-  } else {
-    startBtn.disabled = true;
+    return;
+  }
+
+  startBtn.disabled = true;
+  try {
     await engine.start();
-    startBtn.disabled = false;
     startBtn.textContent = 'stop';
-    statusEl.textContent = 'generating…';
+    statusEl.textContent = engine.chords.map(romanLabel).join(' - ');
+  } catch (err) {
+    statusEl.textContent = err.message;
+  } finally {
+    startBtn.disabled = false;
   }
 });

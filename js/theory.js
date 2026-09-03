@@ -6,6 +6,10 @@ export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A',
 
 const MAJOR_SCALE_STEPS = [0, 2, 4, 5, 7, 9, 11];
 
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+const QUALITY_SUFFIX = { maj7: 'maj7', m7: 'm7', dom7: '7', m7b5: 'm7b5', m9: 'm9', maj9: 'maj9' };
+
 const CHORD_QUALITIES = {
   maj7: [0, 4, 7, 11],
   m7: [0, 3, 7, 10],
@@ -43,6 +47,21 @@ export function pickKey() {
 
 export function pickProgression() {
   return PROGRESSIONS[Math.floor(Math.random() * PROGRESSIONS.length)];
+}
+
+// "Dm7", "G7", "Cmaj7" — the chord as a player would name it.
+export function chordLabel(chord) {
+  return chord.root.replace(/\d+$/, '') + QUALITY_SUFFIX[chord.quality];
+}
+
+// "ii7", "V7", "Imaj7" — the chord's function within the key.
+export function romanLabel({ degree, quality }) {
+  const numeral = ROMAN[degree - 1];
+  if (quality === 'm7') return numeral.toLowerCase() + '7';
+  if (quality === 'm9') return numeral.toLowerCase() + '9';
+  if (quality === 'm7b5') return numeral.toLowerCase() + 'm7b5';
+  if (quality === 'dom7') return numeral + '7';
+  return numeral + QUALITY_SUFFIX[quality];
 }
 
 // Builds an array of voiced chords: { root, quality, bass, notes: [...] }
