@@ -95,12 +95,22 @@ export function keyRootAbsolute(keyName, baseOctave) {
 // Sharps are for chords that belong to a sharp key; everything else is flat.
 const SHARP_KEYS = new Set(['G', 'D', 'A', 'E', 'B']);
 
-// Sharps only when every tone of the chord belongs to the key. Checking the
-// root alone isn't enough: the iv of G major has a diatonic root but is
-// borrowed from the parallel minor, and wants Eb and Bb.
-function spellsWithFlats(keyName, semitonesAboveKey, intervals) {
+// The basic seventh chord, without the added tensions. Spelling is decided
+// on these: the root alone is too little (the iv of G major has a diatonic
+// root but is borrowed, and wants Eb and Bb), and every voiced tone is too
+// much (the iii of D major is a plain F#m7 whose added 9th happens to fall
+// outside the key, and it should not become Gbm7 over that).
+const CORE_TONES = {
+  maj7: [0, 4, 7, 11],
+  m7: [0, 3, 7, 10],
+  m9: [0, 3, 7, 10],
+  dom7: [0, 4, 7, 10],
+  m7b5: [0, 3, 6, 10],
+};
+
+function spellsWithFlats(keyName, semitonesAboveKey, quality) {
   if (!SHARP_KEYS.has(keyName)) return true;
-  return ![0, ...intervals].every((interval) =>
+  return !CORE_TONES[quality].every((interval) =>
     MAJOR_SCALE.includes((((semitonesAboveKey + interval) % 12) + 12) % 12)
   );
 }
@@ -110,7 +120,7 @@ export function buildChords(keyName, progression) {
 
   return progression.map(([semitones, quality, roman]) => {
     const root = keyRoot + semitones;
-    const useFlats = spellsWithFlats(keyName, semitones, VOICINGS[quality]);
+    const useFlats = spellsWithFlats(keyName, semitones, quality);
     return {
       root,
       roman,
