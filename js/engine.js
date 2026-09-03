@@ -95,7 +95,11 @@ export class LofiEngine {
 
   setVolume(percent) {
     if (!this.master) return;
-    this.master.volume.value = percent <= 0 ? -60 : -34 + (percent / 100) * 32;
+    // A squared taper, so the slider tracks perceived loudness rather than
+    // dB. The offset reclaims headroom: trimming the voices to fix the
+    // spectrum left the master peaking around -17 dBFS, which is inaudibly
+    // quiet on a laptop, with the limiter never even engaging.
+    this.master.volume.value = percent <= 0 ? -60 : 20 * Math.log10(Math.pow(percent / 100, 2)) + 6;
   }
 
   getSpectrum() {

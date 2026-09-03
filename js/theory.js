@@ -44,7 +44,8 @@ const PROGRESSIONS = [
   [[0, 'maj7', 'Imaj7'], [5, 'maj7', 'IVmaj7'], [4, 'm7', 'iii7'], [9, 'm9', 'vi9']],
 ];
 
-// Keys sit here; the bass drops an octave below.
+// Where the comping voicings sit. The bass has its own register, set per
+// chord below.
 const KEYS_OCTAVE = 3;
 
 function noteIndex(name) {
@@ -77,14 +78,18 @@ export function romanLabel(chord) {
   return chord.roman;
 }
 
-export function buildChords(keyName, progression) {
+// Without this, a piece in Bb sits nearly an octave above one in C purely
+// because of where its root falls in the octave — the same progression would
+// read bright in one key and dark in another. Keys above F drop an octave so
+// every key plays in the same register. Chords and melody share the rule, or
+// the melody drifts away from the harmony as the key changes.
+export function keyRootAbsolute(keyName, baseOctave) {
   const pitchClass = noteIndex(keyName);
-  // Without this, a piece in Bb sits nearly an octave above one in C purely
-  // because of where its root falls in the octave — the same progression
-  // would read bright in one key and dark in another. Keys above F drop an
-  // octave so every key plays in the same register.
-  const register = pitchClass >= 7 ? KEYS_OCTAVE - 1 : KEYS_OCTAVE;
-  const keyRoot = pitchClass + register * 12;
+  return pitchClass + (pitchClass >= 7 ? baseOctave - 1 : baseOctave) * 12;
+}
+
+export function buildChords(keyName, progression) {
+  const keyRoot = keyRootAbsolute(keyName, KEYS_OCTAVE);
   const useFlats = keyName.includes('b');
 
   return progression.map(([semitones, quality, roman]) => {
@@ -100,7 +105,12 @@ export function buildChords(keyName, progression) {
       notes: declutter(VOICINGS[quality].map((i) => root + i + MIDI_OFFSET)).map((midi) =>
         toNoteName(midi - MIDI_OFFSET, useFlats)
       ),
-      bassRoot: root - 12,
+      // The bass gets its own register rather than tracking the chord an
+      // octave down: with the chord register normalised, low keys were
+      // putting bass fundamentals at 49Hz, which is felt more than heard and
+      // eats the headroom everything else needs. Pinned to octave 2, every
+      // root lands between 65 and 123Hz.
+      bassRoot: (((root % 12) + 12) % 12) + 24,
       // Chord tones for the melody to land on, as absolute semitones.
       tones: [0, ...VOICINGS[quality]].map((interval) => root + interval),
       useFlats,
@@ -111,7 +121,7 @@ export function buildChords(keyName, progression) {
 // The key's major scale across `octaves`, as absolute semitones — the
 // melody draws from this so every note belongs to the key.
 export function scaleTones(keyName, fromOctave, octaves = 2) {
-  const root = noteIndex(keyName) + fromOctave * 12;
+  const root = keyRootAbsolute(keyName, fromOctave);
   const tones = [];
   for (let o = 0; o < octaves; o++) {
     for (const step of MAJOR_SCALE) tones.push(root + o * 12 + step);

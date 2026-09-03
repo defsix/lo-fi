@@ -14,7 +14,7 @@ export function createKeys(bus) {
     envelope: { attack: 0.012, decay: 0.9, sustain: 0.28, release: 1.8 },
     modulationEnvelope: { attack: 0.008, decay: 0.35, sustain: 0.1, release: 0.8 },
   }).connect(reverb);
-  keys.volume.value = -11;
+  keys.volume.value = -10;
   keys.maxPolyphony = 24;
 
   return keys;
@@ -33,21 +33,25 @@ export function createLead(bus) {
     envelope: { attack: 0.014, decay: 0.5, sustain: 0.2, release: 1.1 },
     modulationEnvelope: { attack: 0.01, decay: 0.25, sustain: 0.05, release: 0.6 },
   }).connect(reverb);
-  lead.volume.value = -14;
+  lead.volume.value = -12;
   lead.maxPolyphony = 8;
 
   return lead;
 }
 
 export function createBass(bus) {
-  const filter = new Tone.Filter({ frequency: 420, type: 'lowpass', rolloff: -12 }).connect(bus);
+  // A pure sine puts all of its energy on the fundamental: it dominates the
+  // power spectrum while staying quiet to the ear, and vanishes entirely on
+  // a phone speaker that can't reproduce 65Hz. A triangle keeps the weight
+  // but carries enough harmonics to be heard as a note, not just felt.
+  const filter = new Tone.Filter({ frequency: 700, type: 'lowpass', rolloff: -12 }).connect(bus);
 
   const bass = new Tone.MonoSynth({
-    oscillator: { type: 'sine' },
+    oscillator: { type: 'triangle' },
     envelope: { attack: 0.02, decay: 0.3, sustain: 0.6, release: 0.35 },
     filterEnvelope: { attack: 0.02, decay: 0.2, sustain: 0.4, release: 0.3, baseFrequency: 160, octaves: 1.6 },
   }).connect(filter);
-  bass.volume.value = -12;
+  bass.volume.value = -14;
 
   return bass;
 }

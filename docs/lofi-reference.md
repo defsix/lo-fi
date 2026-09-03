@@ -178,28 +178,46 @@ This is the largest remaining gap.
 
 ### What we measured
 
-A 60-second capture of our own master bus, as power share per band. This
-found a serious defect that no amount of listening to the design would have
-caught:
+`analyse-spectrum.mjs` captures 60 seconds of our own master bus and reports
+power per band, cycling the key several times per run so the result isn't one
+key's register. This found a defect no amount of studying the design would
+have caught:
 
 | band | before | after |
 |---|---|---|
-| sub 20–60 | 1.2% | see note |
-| bass 60–120 | 59.0% | |
-| low mid 120–250 | 37.9% | |
-| mid 250–500 | 1.3% | |
-| upper mid 500–1k | 0.5% | |
-| presence 1–2k | 0.0% | |
-| brightness 2–4k | 0.0% | |
-| air 4–8k | 0.0% | |
+| sub 20–60 | 1.2% | 4.7% |
+| bass 60–120 | 59.0% | 75.4% |
+| low mid 120–250 | 37.9% | 9.6% |
+| mid 250–500 | 1.3% | 8.6% |
+| upper mid 500–1k | 0.5% | 1.7% |
+| presence 1–2k | 0.0% | 0.02% |
+| brightness 2–4k | 0.0% | 0.01% |
+| air 4–8k | 0.0% | 0.04% |
 
-**97% of the energy sat below 250 Hz and there was nothing at all above
-1 kHz.** Causes: the hats were highpassed at 6.5 kHz while the master
-lowpassed at 7.2 kHz, leaving them a dead slot; the keys were lowpassed at
-1.9 kHz, below their own harmonics; and the kick and bass were 4–5 dB too
-loud into the limiter. Fixed by opening the hats to 4.2 kHz, the master to
-9.5 kHz, the keys to 3.2 kHz and the lead to 3.8 kHz, trimming kick and bass,
-and highpassing sub-38 Hz rumble that only ate headroom.
+**Before: 97% of the energy sat below 250 Hz with nothing at all above
+1 kHz.** Causes, all of them defects rather than choices:
+
+- The hats were highpassed at 6.5 kHz into a master lowpassed at 7.2 kHz —
+  a 700 Hz slot. They were inaudible.
+- The keys were lowpassed at 1.9 kHz, below their own harmonics.
+- The kick and bass ran several dB too hot into the limiter.
+- The bass was a **pure sine**, so all of its energy sat on the fundamental.
+  That dominates a power spectrum while staying quiet to the ear, and
+  disappears completely on a phone speaker that cannot reproduce 65 Hz. A
+  triangle keeps the weight and adds enough harmonics to be heard as a note
+  rather than felt as pressure.
+
+Fixes: hats opened to 4.2 kHz, master to 9.5 kHz, keys to 3.2 kHz, lead to
+3.8 kHz; kick and bass trimmed; sub-38 Hz rumble highpassed out; bass moved
+to a triangle. The mid band came up 4 dB and the top is no longer empty.
+
+**Read these numbers with care.** Power share is not loudness: the ear
+weights mids and highs far more than a power measure does, and a natural
+music spectrum falls steeply with frequency anyway. An A-weighted or
+loudness-matched measure would be the right comparison, and we don't have
+one. The measurement is reliable for catching *defects* — an empty band, a
+filter fighting another filter — and unreliable as a target to tune toward.
+Balance is still a question for ears.
 
 Lesson worth keeping: **a dark genre is not an excuse for a dark mix.**
 Everything above 1 kHz being empty is a defect, not a style.

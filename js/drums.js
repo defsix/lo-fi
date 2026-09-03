@@ -24,7 +24,7 @@ export function createDrumKit(bus) {
     noise: { type: 'pink' },
     envelope: { attack: 0.002, decay: 0.14, sustain: 0 },
   }).connect(snareTone);
-  snare.volume.value = -12;
+  snare.volume.value = -10;
 
   // Rolled off at both ends: an open-topped hat is what makes a cheap kit
   // sound brittle.
@@ -35,7 +35,7 @@ export function createDrumKit(bus) {
     noise: { type: 'white' },
     envelope: { attack: 0.001, decay: 0.035, sustain: 0 },
   }).connect(hatHigh);
-  hat.volume.value = -20;
+  hat.volume.value = -17;
 
   return { kick, snare, hat };
 }
