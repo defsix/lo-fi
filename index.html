@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>076 lofi — engine test</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <h1>076 lofi</h1>
+    <p class="sub">stage 1 — core audio engine test</p>
+
+    <button id="start-btn">start</button>
+
+    <dl class="info">
+      <div>
+        <dt>status</dt>
+        <dd id="status">idle</dd>
+      </div>
+      <div>
+        <dt>key</dt>
+        <dd id="key-info">—</dd>
+      </div>
+      <div>
+        <dt>chord</dt>
+        <dd id="chord-info">—</dd>
+      </div>
+    </dl>
+
+    <p class="hint">generative jazzy chords, sub bass, and a swung lo-fi drum loop. no two plays use the same key/progression.</p>
+  </main>
+
+  <script src="vendor/tone.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
