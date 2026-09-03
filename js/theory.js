@@ -4,6 +4,20 @@
 
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+// Flat keys read better in this idiom (Bb, Eb), but the table above is all
+// sharps — looking up 'Bb' in it returns -1 and transposes the whole mix
+// down a semitone, so names are normalised before any lookup and spelled
+// back out with flats when the key calls for it.
+const FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+const ENHARMONIC = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+
+function noteIndex(name) {
+  const index = NOTE_NAMES.indexOf(ENHARMONIC[name] || name);
+  if (index === -1) throw new Error(`unknown note name: ${name}`);
+  return index;
+}
+
 const MAJOR_SCALE_STEPS = [0, 2, 4, 5, 7, 9, 11];
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
@@ -35,10 +49,10 @@ function degreeToSemitone(degree) {
   return MAJOR_SCALE_STEPS[(degree - 1 + 7) % 7];
 }
 
-function absoluteToNoteName(absoluteSemitone) {
+function absoluteToNoteName(absoluteSemitone, useFlats = false) {
   const octave = Math.floor(absoluteSemitone / 12);
   const n = ((absoluteSemitone % 12) + 12) % 12;
-  return NOTE_NAMES[n] + octave;
+  return (useFlats ? FLAT_NAMES : NOTE_NAMES)[n] + octave;
 }
 
 export function pickKey() {
@@ -67,14 +81,14 @@ export function romanLabel({ degree, quality }) {
 // Builds an array of voiced chords: { root, quality, bass, notes: [...] }
 // `octave` sets the pad's register (bass sits two octaves below it).
 export function buildChords(keyName, progression, octave = 4) {
-  const keyRootIndex = NOTE_NAMES.indexOf(keyName);
-  const keyRootAbsolute = keyRootIndex + octave * 12;
+  const keyRootAbsolute = noteIndex(keyName) + octave * 12;
+  const useFlats = keyName.includes('b');
 
   return progression.map(({ degree, q }) => {
     const rootAbsolute = keyRootAbsolute + degreeToSemitone(degree);
     const intervals = CHORD_QUALITIES[q];
-    const notes = intervals.map((iv) => absoluteToNoteName(rootAbsolute + iv));
-    const bass = absoluteToNoteName(rootAbsolute - 24);
-    return { degree, quality: q, root: absoluteToNoteName(rootAbsolute), bass, notes };
+    const notes = intervals.map((iv) => absoluteToNoteName(rootAbsolute + iv, useFlats));
+    const bass = absoluteToNoteName(rootAbsolute - 24, useFlats);
+    return { degree, quality: q, root: absoluteToNoteName(rootAbsolute, useFlats), bass, notes };
   });
 }

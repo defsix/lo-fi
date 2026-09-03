@@ -1,7 +1,8 @@
-// Bundles the engine into a single self-contained HTML page.
+// Bundles index.html into a single self-contained page.
 //
 // The hosted listening page can't fetch anything — no CDN, no module
-// imports — so Tone.js and the engine modules are inlined into one file.
+// imports — so Tone.js and every engine module are inlined, and the
+// document wrapper is dropped because the artifact host supplies its own.
 // Run: node tools/build-artifact.mjs [outfile]
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
@@ -13,40 +14,54 @@ const outFile = resolve(root, process.argv[2] || 'dist/engine-room.html');
 
 // Dependency order matters: concatenated modules share one scope.
 const MODULES = ['js/theory.js', 'js/master.js', 'js/instruments.js', 'js/drums.js', 'js/engine.js'];
+const PAGE = 'js/page.js';
 
-// main.js drives the repo's own test page and has no place in the bundle;
-// everything else under js/ is engine code and must be listed above, or the
-// page fails at runtime with a missing function.
-const PAGE_ENTRY = 'main.js';
+// Every module under js/ is engine code and must be listed above, or the
+// bundle fails at runtime with a missing function.
 const missing = readdirSync(resolve(root, 'js'))
-  .filter((f) => f.endsWith('.js') && f !== PAGE_ENTRY)
+  .filter((f) => f.endsWith('.js'))
   .map((f) => `js/${f}`)
-  .filter((f) => !MODULES.includes(f));
+  .filter((f) => f !== PAGE && !MODULES.includes(f));
 
 if (missing.length) throw new Error(`these engine modules are not in the bundle: ${missing.join(', ')}`);
 
+function read(file) {
+  return readFileSync(resolve(root, file), 'utf8');
+}
+
 function stripModuleSyntax(source, file) {
-  const withoutImports = source.replace(/^import[\s\S]*?from\s+'[^']+';\s*$/gm, '');
-  const withoutExports = withoutImports.replace(/^export\s+/gm, '');
-  return `// ---- ${file} ${'-'.repeat(Math.max(0, 62 - file.length))}\n${withoutImports === source ? withoutExports : withoutExports.trimStart()}`;
+  const body = source.replace(/^import[\s\S]*?from\s+'[^']+';\s*$/gm, '').replace(/^export\s+/gm, '');
+  return `// ---- ${file} ${'-'.repeat(Math.max(0, 60 - file.length))}\n${body.trim()}\n`;
 }
 
-const tone = readFileSync(resolve(root, 'vendor/tone.js'), 'utf8');
-const engine = MODULES.map((file) => stripModuleSyntax(readFileSync(resolve(root, file), 'utf8'), file)).join('\n');
-const template = readFileSync(resolve(root, 'tools/artifact-template.html'), 'utf8');
+const tone = read('vendor/tone.js');
+const bundle = [...MODULES, PAGE].map((file) => stripModuleSyntax(read(file), file)).join('\n');
 
-for (const [placeholder, label] of [['/*__TONE__*/', 'TONE'], ['/*__ENGINE__*/', 'ENGINE']]) {
-  if (!template.includes(placeholder)) throw new Error(`template is missing the ${label} placeholder`);
-}
-
-// A literal </script> in the inlined source would close the tag early.
-for (const [source, label] of [[tone, 'vendor/tone.js'], [engine, 'engine modules']]) {
+// A literal </script> in inlined source would close the tag early.
+for (const [source, label] of [[tone, 'vendor/tone.js'], [bundle, 'engine modules']]) {
   if (/<\/script/i.test(source)) throw new Error(`${label} contains a </script> sequence and cannot be inlined as-is`);
 }
 
-const html = template.replace('/*__TONE__*/', () => tone).replace('/*__ENGINE__*/', () => engine);
+const TONE_TAG = '<script src="vendor/tone.js"></script>';
+const PAGE_TAG = '<script type="module" src="js/page.js"></script>';
+
+let html = read('index.html');
+for (const [tag, label] of [[TONE_TAG, 'Tone'], [PAGE_TAG, 'page']]) {
+  if (!html.includes(tag)) throw new Error(`index.html no longer has the ${label} script tag the bundler replaces`);
+}
+
+html = html
+  // The artifact host provides doctype, head and body itself.
+  .replace(/^<!doctype html>\s*/i, '')
+  .replace(/<\/?(?:html|head|body)(?:\s[^>]*)?>\s*/gi, '')
+  .replace(/<meta\s+(?:charset|name="viewport")[^>]*>\s*/gi, '')
+  .replace(TONE_TAG, () => `<script>\n${tone}\n</script>`)
+  .replace(PAGE_TAG, () => `<script>\n${bundle}\n</script>`);
 
 mkdirSync(dirname(outFile), { recursive: true });
 writeFileSync(outFile, html, 'utf8');
 
-console.log(`built ${outFile} — ${(html.length / 1024).toFixed(0)} KB (tone ${(tone.length / 1024).toFixed(0)} KB, engine ${(engine.length / 1024).toFixed(0)} KB)`);
+console.log(
+  `built ${outFile} — ${(html.length / 1024).toFixed(0)} KB ` +
+    `(tone ${(tone.length / 1024).toFixed(0)} KB, engine + page ${(bundle.length / 1024).toFixed(0)} KB)`
+);

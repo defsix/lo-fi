@@ -3,35 +3,262 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>076 lofi — engine test</title>
-<link rel="stylesheet" href="css/style.css">
+<title>076 Lofi Engine Room</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+<style>
+  :root {
+    --bg: oklch(0.14 0.012 55);
+    --panel: oklch(0.19 0.014 50);
+    --border: oklch(0.26 0.016 50);
+    --text: oklch(0.95 0.01 75);
+    --text-dim: oklch(0.68 0.02 60);
+    --text-faint: oklch(0.48 0.018 55);
+    --amber: oklch(0.78 0.15 65);
+    --amber-soft: oklch(0.78 0.15 65 / 0.14);
+    --alert: oklch(0.72 0.16 30);
+    --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+  }
+
+  .stage {
+    width: min(100%, 640px);
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+  }
+
+  .masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 19px;
+    color: var(--amber);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .scope-wrap { height: 190px; }
+
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .transport {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .play {
+    width: 62px;
+    height: 62px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    border: 2px solid var(--amber);
+    background: transparent;
+    color: var(--amber);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.15s ease;
+  }
+
+  .play:hover { background: var(--amber-soft); transform: scale(1.04); }
+  .play:disabled { opacity: 0.45; cursor: progress; }
+
+  .regen {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 10px 18px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .regen:hover { border-color: var(--amber); color: var(--amber); }
+
+  .vol {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: flex-end;
+    color: var(--text-faint);
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 110px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--amber);
+    border: none;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--amber);
+    border: none;
+  }
+
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+
+  .status {
+    margin: 0;
+    min-height: 18px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+
+  .status[data-tone="error"] { color: var(--alert); }
+
+  .readout {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+  }
+
+  .readout dt {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .readout dd {
+    margin: 8px 0 0;
+    font-family: var(--mono);
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+
+  .readout dd.progression { color: var(--amber); font-size: 13px; }
+
+  .layers {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.9;
+    color: var(--text-faint);
+  }
+
+  .layers b { color: var(--text-dim); font-weight: 400; }
+
+  @media (max-width: 520px) {
+    .readout { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .play { transition: none; }
+  }
+</style>
 </head>
 <body>
-  <main>
-    <h1>076 lofi</h1>
-    <p class="sub">stage 1 — core audio engine test</p>
 
-    <button id="start-btn">start</button>
+<div class="stage">
+  <div class="masthead">
+    <span class="brand">076 lofi</span>
+    <span class="eyebrow">stage 1 &middot; core audio engine</span>
+  </div>
 
-    <dl class="info">
-      <div>
-        <dt>status</dt>
-        <dd id="status">idle</dd>
-      </div>
-      <div>
-        <dt>key</dt>
-        <dd id="key-info">—</dd>
-      </div>
-      <div>
-        <dt>chord</dt>
-        <dd id="chord-info">—</dd>
-      </div>
-    </dl>
+  <div class="scope-wrap">
+    <canvas id="scope"></canvas>
+  </div>
 
-    <p class="hint">generative jazzy chords, sub bass, and a swung lo-fi drum loop. no two plays use the same key/progression.</p>
-  </main>
+  <div class="transport">
+    <button class="play" id="play" aria-label="Play">
+      <svg id="play-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l12-7z" fill="currentColor"></path></svg>
+    </button>
+    <button class="regen" id="regen">new mix</button>
+    <div class="vol">
+      <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8v4h3l4 4V4L6 8H3z" fill="currentColor"></path><path d="M13.5 7a4 4 0 0 1 0 6" stroke="currentColor" stroke-width="1.5" fill="none"></path></svg>
+      <input type="range" id="volume" min="0" max="100" value="80" aria-label="Volume">
+    </div>
+  </div>
 
-  <script src="vendor/tone.js"></script>
-  <script type="module" src="js/main.js"></script>
+  <p class="status" id="status">press play to generate a mix</p>
+
+  <dl class="readout">
+    <div>
+      <dt>key</dt>
+      <dd id="key">&mdash;</dd>
+    </div>
+    <div>
+      <dt>progression</dt>
+      <dd class="progression" id="progression">&mdash;</dd>
+    </div>
+    <div>
+      <dt>chord</dt>
+      <dd id="chord">&mdash;</dd>
+    </div>
+    <div>
+      <dt>output</dt>
+      <dd id="output">&mdash;</dd>
+    </div>
+  </dl>
+
+  <p class="layers">
+    <b>pad</b> &mdash; FM Rhodes, chorus + tremolo, lowpass at 2.2k<br>
+    <b>bass</b> &mdash; sine sub following the chord root, two octaves down<br>
+    <b>drums</b> &mdash; swung eighths at 76 bpm, humanized timing and velocity<br>
+    every mix picks a new key and progression. nothing is sampled &mdash; it is written live.
+  </p>
+</div>
+
+<script src="vendor/tone.js"></script>
+<script type="module" src="js/page.js"></script>
 </body>
 </html>

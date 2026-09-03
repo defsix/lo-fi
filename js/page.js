@@ -1,0 +1,157 @@
+import { LofiEngine } from './engine.js';
+import { chordLabel, romanLabel } from './theory.js';
+
+// ---- visualiser ---------------------------------------------------------
+const engine = new LofiEngine();
+const canvas = document.getElementById('scope');
+const ctx = canvas.getContext('2d');
+const BIN_COUNT = 64;
+const smoothed = new Array(BIN_COUNT).fill(0);
+let cssWidth = 0;
+let cssHeight = 0;
+
+function sizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  cssWidth = rect.width;
+  cssHeight = rect.height;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function drawScope() {
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+  const mid = cssHeight / 2;
+  const barWidth = 3;
+  const gap = (cssWidth - BIN_COUNT * barWidth) / (BIN_COUNT - 1);
+  const values = engine.getSpectrum();
+  const amber = getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#e3a24d';
+
+  for (let i = 0; i < BIN_COUNT; i++) {
+    // fft values arrive in dB: -100 is silence, 0 is full scale
+    const level = values ? Math.max(0, Math.min(1, (values[i] + 90) / 75)) : 0;
+    const taper = Math.pow(Math.sin((i / (BIN_COUNT - 1)) * Math.PI), 0.6);
+    smoothed[i] += (level * taper - smoothed[i]) * 0.22;
+
+    const half = Math.max(1, smoothed[i] * (cssHeight / 2 - 6));
+    const x = i * (barWidth + gap);
+    ctx.fillStyle = amber;
+    ctx.globalAlpha = 0.35 + smoothed[i] * 0.6;
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(x, mid - half, barWidth, half * 2, 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(x, mid - half, barWidth, half * 2);
+    }
+  }
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(drawScope);
+}
+
+// ---- controls -----------------------------------------------------------
+const playBtn = document.getElementById('play');
+const playIcon = document.getElementById('play-icon');
+const regenBtn = document.getElementById('regen');
+const volumeInput = document.getElementById('volume');
+const statusEl = document.getElementById('status');
+const keyEl = document.getElementById('key');
+const progressionEl = document.getElementById('progression');
+const chordEl = document.getElementById('chord');
+const outputEl = document.getElementById('output');
+
+const PLAY_PATH = '<path d="M8 5v14l12-7z" fill="currentColor"></path>';
+const PAUSE_PATH = '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"></rect><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"></rect>';
+
+function setStatus(text, kind) {
+  statusEl.textContent = text;
+  if (kind) statusEl.setAttribute('data-tone', kind);
+  else statusEl.removeAttribute('data-tone');
+}
+
+function setPlayingUI(playing) {
+  playIcon.innerHTML = playing ? PAUSE_PATH : PLAY_PATH;
+  playIcon.style.marginLeft = playing ? '0' : '3px';
+  playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+}
+
+function showMix() {
+  keyEl.textContent = engine.key + ' major';
+  progressionEl.textContent = engine.chords.map(romanLabel).join(' - ');
+  chordEl.textContent = chordLabel(engine.chords[0]);
+}
+
+engine.onChordChange = (chord) => {
+  chordEl.textContent = chordLabel(chord);
+};
+
+async function play() {
+  playBtn.disabled = true;
+  try {
+    await engine.start();
+    engine.setVolume(Number(volumeInput.value));
+    showMix();
+    setStatus('generating - chords, bass and drums written live in your browser');
+    setPlayingUI(true);
+  } catch (err) {
+    setStatus('audio could not start: ' + (err && err.message ? err.message : String(err)), 'error');
+  } finally {
+    playBtn.disabled = false;
+  }
+}
+
+function stop() {
+  engine.stop();
+  setPlayingUI(false);
+  setStatus('stopped');
+}
+
+playBtn.addEventListener('click', () => (engine.isPlaying ? stop() : play()));
+
+regenBtn.addEventListener('click', async () => {
+  if (engine.isPlaying) stop();
+  await play();
+});
+
+volumeInput.addEventListener('input', () => {
+  if (engine.isPlaying) engine.setVolume(Number(volumeInput.value));
+});
+
+// The engine can be producing sound the browser never passes to a speaker.
+// The meter reads the bus directly, so a live number here with no audio in
+// the room means the page is fine and the output path is not.
+let silentTicks = 0;
+
+setInterval(() => {
+  if (!engine.isPlaying) {
+    outputEl.textContent = '-';
+    silentTicks = 0;
+    return;
+  }
+
+  const level = engine.getLevel();
+  const db = level > 0.0001 ? Math.round(20 * Math.log10(level)) : -Infinity;
+  const state = engine.getContextState();
+  outputEl.textContent = (db === -Infinity ? 'silent' : db + ' dB') + (state === 'running' ? '' : ' / ' + state);
+
+  if (state !== 'running') {
+    setStatus('the browser suspended audio (' + state + ') - press play to resume', 'error');
+    return;
+  }
+
+  if (level < 0.0005) {
+    silentTicks++;
+    if (silentTicks === 6) {
+      setStatus('the engine is running but its output is silent - this is the audio graph, not your speakers', 'error');
+    }
+  } else if (silentTicks) {
+    silentTicks = 0;
+    setStatus('generating - chords, bass and drums written live in your browser');
+  }
+}, 500);
+
+window.addEventListener('resize', sizeCanvas);
+sizeCanvas();
+setPlayingUI(false);
+requestAnimationFrame(drawScope);
