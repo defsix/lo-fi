@@ -103,6 +103,17 @@ for (const b of bandPower) {
   );
 }
 
+// A phone or tablet speaker reproduces almost nothing below ~400Hz, so the
+// full-range balance above is not the mix its listener gets. This is the
+// same energy restricted to what such a speaker can actually radiate.
+const small = bandPower.filter((b) => b.lo >= 250);
+const smallTotal = small.reduce((sum, b) => sum + b.power, 0);
+console.log('\nAS HEARD ON A SMALL SPEAKER (nothing below 250Hz survives)');
+for (const b of small) {
+  const share = (b.power / smallTotal) * 100;
+  console.log(`  ${b.name.padEnd(12)} ${String(b.lo).padStart(5)}-${String(b.hi).padEnd(6)} ${share.toFixed(1).padStart(5)}%  ${'#'.repeat(Math.round(share / 1.5))}`);
+}
+
 const rms = data.rms.filter((v) => v > 0);
 rms.sort((a, b) => a - b);
 const medianRms = rms[Math.floor(rms.length / 2)];

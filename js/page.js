@@ -1,5 +1,6 @@
 import { LofiEngine } from './engine.js';
 import { chordLabel, romanLabel } from './theory.js';
+import { capture } from './capture.js';
 
 // ---- visualiser ---------------------------------------------------------
 const engine = new LofiEngine();
@@ -156,6 +157,35 @@ setInterval(() => {
     setStatus('generating - chords, bass and drums written live in your browser');
   }
 }, 500);
+
+// Diagnostics, off unless asked for: open the page with ?debug to get a
+// button that saves the engine's own output as a WAV. A phone recording of a
+// speaker measures the phone; this measures the engine.
+if (new URLSearchParams(location.search).has('debug')) {
+  const button = document.createElement('button');
+  button.className = 'regen';
+  button.textContent = 'capture 20s';
+  button.addEventListener('click', async () => {
+    if (!engine.isPlaying) {
+      setStatus('press play first - there is nothing to capture', 'error');
+      return;
+    }
+    button.disabled = true;
+    const blob = await capture(engine.master, 20, (done) => {
+      button.textContent = `capturing ${Math.round(done * 100)}%`;
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '076-lofi-capture.webm';
+    link.click();
+    URL.revokeObjectURL(url);
+    button.textContent = 'capture 20s';
+    button.disabled = false;
+    setStatus('captured - that file is the engine output, with no microphone in it');
+  });
+  document.querySelector('.transport').appendChild(button);
+}
 
 window.addEventListener('resize', sizeCanvas);
 sizeCanvas();
