@@ -88,12 +88,29 @@ export function keyRootAbsolute(keyName, baseOctave) {
   return pitchClass + (pitchClass >= 7 ? baseOctave - 1 : baseOctave) * 12;
 }
 
+// Whether a chord is spelled with flats or sharps. Keying this off the key
+// *name* was wrong twice over: F major has no "b" in its name but is a flat
+// key (its bVII is Eb, not D#), and a borrowed minor chord in a sharp key
+// still wants flats (the iv of G major is Cm7 — C Eb G Bb, never C D# G A#).
+// Sharps are for chords that belong to a sharp key; everything else is flat.
+const SHARP_KEYS = new Set(['G', 'D', 'A', 'E', 'B']);
+
+// Sharps only when every tone of the chord belongs to the key. Checking the
+// root alone isn't enough: the iv of G major has a diatonic root but is
+// borrowed from the parallel minor, and wants Eb and Bb.
+function spellsWithFlats(keyName, semitonesAboveKey, intervals) {
+  if (!SHARP_KEYS.has(keyName)) return true;
+  return ![0, ...intervals].every((interval) =>
+    MAJOR_SCALE.includes((((semitonesAboveKey + interval) % 12) + 12) % 12)
+  );
+}
+
 export function buildChords(keyName, progression) {
   const keyRoot = keyRootAbsolute(keyName, KEYS_OCTAVE);
-  const useFlats = keyName.includes('b');
 
   return progression.map(([semitones, quality, roman]) => {
     const root = keyRoot + semitones;
+    const useFlats = spellsWithFlats(keyName, semitones, VOICINGS[quality]);
     return {
       root,
       roman,

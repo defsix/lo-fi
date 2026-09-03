@@ -21,13 +21,26 @@ function sizeCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function drawScope() {
+// Read once, not per frame: getComputedStyle forces a style resolution, and
+// at 60fps that competes with the note scheduling on the same thread.
+const AMBER = getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#e3a24d';
+
+// The visualiser is decoration; the audio is not. Half frame rate keeps it
+// smooth enough to read while leaving the main thread free to schedule.
+const FRAME_MS = 1000 / 30;
+let lastFrame = 0;
+
+function drawScope(now) {
+  requestAnimationFrame(drawScope);
+  if (now - lastFrame < FRAME_MS) return;
+  lastFrame = now;
+
   ctx.clearRect(0, 0, cssWidth, cssHeight);
   const mid = cssHeight / 2;
   const barWidth = 3;
   const gap = (cssWidth - BIN_COUNT * barWidth) / (BIN_COUNT - 1);
   const values = engine.getSpectrum();
-  const amber = getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#e3a24d';
+  ctx.fillStyle = AMBER;
 
   for (let i = 0; i < BIN_COUNT; i++) {
     // fft values arrive in dB: -100 is silence, 0 is full scale
@@ -37,18 +50,10 @@ function drawScope() {
 
     const half = Math.max(1, smoothed[i] * (cssHeight / 2 - 6));
     const x = i * (barWidth + gap);
-    ctx.fillStyle = amber;
     ctx.globalAlpha = 0.35 + smoothed[i] * 0.6;
-    if (ctx.roundRect) {
-      ctx.beginPath();
-      ctx.roundRect(x, mid - half, barWidth, half * 2, 2);
-      ctx.fill();
-    } else {
-      ctx.fillRect(x, mid - half, barWidth, half * 2);
-    }
+    ctx.fillRect(x, mid - half, barWidth, half * 2);
   }
   ctx.globalAlpha = 1;
-  requestAnimationFrame(drawScope);
 }
 
 // ---- controls -----------------------------------------------------------

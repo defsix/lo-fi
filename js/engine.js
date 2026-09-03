@@ -33,9 +33,11 @@ export class LofiEngine {
 
   build() {
     if (this.keys) return;
-    this.master = createMaster();
-    this.keys = createKeys(this.master);
-    this.lead = createLead(this.master);
+    const master = createMaster();
+    this.master = master.bus;
+    this.reverbSend = master.send;
+    this.keys = createKeys(this.master, this.reverbSend);
+    this.lead = createLead(this.master, this.reverbSend);
     this.bass = createBass(this.master);
     this.drumKit = createDrumKit(this.master);
 
@@ -52,18 +54,33 @@ export class LofiEngine {
   }
 
   async start() {
+    // Ask the browser for a playback-sized audio buffer instead of the
+    // default interactive one. A small buffer exists to keep key-to-sound
+    // latency low, which matters for an instrument and not at all for a
+    // stream — and it is what makes the audio thread drop out under load.
+    // Must happen before any node is built on the context.
+    if (!this.contextConfigured) {
+      Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
+      this.contextConfigured = true;
+    }
+
     await Tone.start();
     if (Tone.getContext().state !== 'running') {
       throw new Error('the browser did not allow audio to start');
     }
 
     this.build();
-    if (Tone.Transport.state === 'started') return;
+    if (Tone.getTransport().state === 'started') return;
 
-    Tone.Transport.bpm.value = BPM;
+    // Tone schedules from the main thread on a lookahead. The default 0.1s
+    // leaves no room for a busy main thread, and a late schedule is heard as
+    // a stutter or a click. This is a music player, so latency costs nothing.
+    Tone.getContext().lookAhead = 0.3;
+
+    Tone.getTransport().bpm.value = BPM;
     // Feel is applied per hit in groove.js, so the transport itself stays
     // straight — two swing sources fight each other.
-    Tone.Transport.swing = 0;
+    Tone.getTransport().swing = 0;
 
     this.regenerate();
 
@@ -71,12 +88,12 @@ export class LofiEngine {
       this.stepSeq.start(0);
       this.scheduled = true;
     }
-    Tone.Transport.start();
+    Tone.getTransport().start();
   }
 
   stop() {
     if (typeof Tone === 'undefined') return;
-    Tone.Transport.stop();
+    Tone.getTransport().stop();
     if (this.keys) this.keys.releaseAll();
     if (this.lead) this.lead.releaseAll();
     if (this.bass) this.bass.triggerRelease();
@@ -119,7 +136,7 @@ export class LofiEngine {
   }
 
   get isPlaying() {
-    return typeof Tone !== 'undefined' && Tone.Transport.state === 'started';
+    return typeof Tone !== 'undefined' && Tone.getTransport().state === 'started';
   }
 
   get currentChord() {
@@ -153,7 +170,7 @@ export class LofiEngine {
       // Scheduled against the bar's own time, not Tone.now(): the draw
       // timeline rejects times that don't advance, and now() sampled inside
       // a lookahead callback doesn't reliably.
-      Tone.Draw.schedule(() => this.onChordChange(chord, this.key), time);
+      Tone.getDraw().schedule(() => this.onChordChange(chord, this.key), time);
     }
   }
 
