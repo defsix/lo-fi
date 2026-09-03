@@ -2,22 +2,22 @@
 // carrying a small random timing/velocity offset so it doesn't feel
 // mechanical.
 
-export function createDrumKit() {
+export function createDrumKit(bus) {
   const kick = new Tone.MembraneSynth({
     pitchDecay: 0.05,
-    octaves: 6,
+    octaves: 4,
     envelope: { attack: 0.001, decay: 0.35, sustain: 0 },
-  }).toDestination();
+  }).connect(bus);
   kick.volume.value = -6;
 
-  const snareFilter = new Tone.Filter({ frequency: 1800, type: 'bandpass' }).toDestination();
+  const snareFilter = new Tone.Filter({ frequency: 1800, type: 'bandpass' }).connect(bus);
   const snare = new Tone.NoiseSynth({
     noise: { type: 'white' },
     envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
   }).connect(snareFilter);
   snare.volume.value = -10;
 
-  const hatFilter = new Tone.Filter({ frequency: 8000, type: 'highpass' }).toDestination();
+  const hatFilter = new Tone.Filter({ frequency: 8000, type: 'highpass' }).connect(bus);
   const hat = new Tone.NoiseSynth({
     noise: { type: 'white' },
     envelope: { attack: 0.001, decay: 0.04, sustain: 0 },

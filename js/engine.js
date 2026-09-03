@@ -1,4 +1,5 @@
 import { pickKey, pickProgression, buildChords } from './theory.js';
+import { createMaster } from './master.js';
 import { createPad, createBass } from './instruments.js';
 import { createDrumKit, scheduleDrums } from './drums.js';
 
@@ -28,13 +29,19 @@ export class LofiEngine {
   // Builds the audio graph once; safe to call repeatedly.
   build() {
     if (this.pad) return;
-    this.pad = createPad();
-    this.bass = createBass();
-    this.drumKit = createDrumKit();
+    this.master = createMaster();
+    this.pad = createPad(this.master);
+    this.bass = createBass(this.master);
+    this.drumKit = createDrumKit(this.master);
     this.drumSeq = scheduleDrums(this.drumKit);
     this.chordLoop = new Tone.Loop((time) => this._playCurrentChord(time), CHORD_DURATION);
+
+    // Metering taps the bus, not the destination, so what the meter shows
+    // is what the engine is producing.
     this.analyser = new Tone.Analyser('fft', FFT_SIZE);
-    Tone.getDestination().connect(this.analyser);
+    this.meter = new Tone.Analyser('waveform', 512);
+    this.master.connect(this.analyser);
+    this.master.connect(this.meter);
   }
 
   async start() {
@@ -84,11 +91,34 @@ export class LofiEngine {
   }
 
   setVolume(percent) {
-    Tone.getDestination().volume.value = percent === 0 ? -Infinity : -34 + (percent / 100) * 34;
+    if (!this.master) return;
+    this.master.volume.value = percent <= 0 ? -60 : -34 + (percent / 100) * 34;
   }
 
   getSpectrum() {
     return this.analyser ? this.analyser.getValue() : null;
+  }
+
+  // RMS of the master bus, 0..1 — what the engine is actually putting out,
+  // regardless of whether the browser passes it to a speaker.
+  getLevel() {
+    if (!this.meter) return 0;
+    const buf = this.meter.getValue();
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    return Math.sqrt(sum / buf.length);
+  }
+
+  getContextState() {
+    return typeof Tone === 'undefined' ? 'no-tone' : Tone.getContext().state;
+  }
+
+  // Browsers can suspend a context after it has started (tab hidden, output
+  // device change). Resuming is safe to call at any time.
+  async resume() {
+    if (typeof Tone === 'undefined') return;
+    const ctx = Tone.getContext();
+    if (ctx.state !== 'running') await ctx.resume();
   }
 
   get isPlaying() {

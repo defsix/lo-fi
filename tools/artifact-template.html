@@ -238,15 +238,15 @@
       <dd id="chord">&mdash;</dd>
     </div>
     <div>
-      <dt>tempo</dt>
-      <dd id="tempo">76 <span style="color:var(--text-faint)">bpm</span></dd>
+      <dt>output</dt>
+      <dd id="output">&mdash;</dd>
     </div>
   </dl>
 
   <p class="layers">
     <b>pad</b> &mdash; FM Rhodes, chorus + tremolo, lowpass at 2.2k<br>
     <b>bass</b> &mdash; sine sub following the chord root, two octaves down<br>
-    <b>drums</b> &mdash; swung eighths (0.58), humanized timing and velocity<br>
+    <b>drums</b> &mdash; swung eighths at 76 bpm, humanized timing and velocity<br>
     every mix picks a new key and progression. nothing is sampled &mdash; it is written live.
   </p>
 </div>
@@ -313,6 +313,7 @@ const statusEl = document.getElementById('status');
 const keyEl = document.getElementById('key');
 const progressionEl = document.getElementById('progression');
 const chordEl = document.getElementById('chord');
+const outputEl = document.getElementById('output');
 
 const PLAY_PATH = '<path d="M8 5v14l12-7z" fill="currentColor"></path>';
 const PAUSE_PATH = '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"></rect><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"></rect>';
@@ -370,6 +371,39 @@ regenBtn.addEventListener('click', async () => {
 volumeInput.addEventListener('input', () => {
   if (engine.isPlaying) engine.setVolume(Number(volumeInput.value));
 });
+
+// The engine can be producing sound the browser never passes to a speaker.
+// The meter reads the bus directly, so a live number here with no audio in
+// the room means the page is fine and the output path is not.
+let silentTicks = 0;
+
+setInterval(() => {
+  if (!engine.isPlaying) {
+    outputEl.textContent = '-';
+    silentTicks = 0;
+    return;
+  }
+
+  const level = engine.getLevel();
+  const db = level > 0.0001 ? Math.round(20 * Math.log10(level)) : -Infinity;
+  const state = engine.getContextState();
+  outputEl.textContent = (db === -Infinity ? 'silent' : db + ' dB') + (state === 'running' ? '' : ' / ' + state);
+
+  if (state !== 'running') {
+    setStatus('the browser suspended audio (' + state + ') - press play to resume', 'error');
+    return;
+  }
+
+  if (level < 0.0005) {
+    silentTicks++;
+    if (silentTicks === 6) {
+      setStatus('the engine is running but its output is silent - this is the audio graph, not your speakers', 'error');
+    }
+  } else if (silentTicks) {
+    silentTicks = 0;
+    setStatus('generating - chords, bass and drums written live in your browser');
+  }
+}, 500);
 
 window.addEventListener('resize', sizeCanvas);
 sizeCanvas();
