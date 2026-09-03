@@ -185,7 +185,10 @@ export class LofiEngine {
 
     // --- drums
     if (drums.kick.includes(step)) {
-      this.drumKit.kick.triggerAttackRelease('C1', '8n', time + grooveOffset(step, 'kick'), 0.85 + Math.random() * 0.12);
+      const at = time + grooveOffset(step, 'kick');
+      const velocity = 0.85 + Math.random() * 0.12;
+      this.drumKit.kick.triggerAttackRelease('A1', '8n', at, velocity);
+      this.drumKit.click.triggerAttackRelease('32n', at, velocity * 0.6);
     }
     if (drums.snare.includes(step) || drums.fill.includes(step)) {
       this.drumKit.snare.triggerAttackRelease('16n', time + grooveOffset(step, 'snare'), 0.62 + Math.random() * 0.14);

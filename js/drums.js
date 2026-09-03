@@ -8,16 +8,30 @@
 import { STEPS_PER_BAR } from './groove.js';
 
 export function createDrumKit(bus) {
-  // Softer attack and a shorter pitch sweep than before: the old kick's
-  // click was reading as a crackle once the limiter caught it.
+  // The kick used to sit on C1 (33Hz) and sweep three octaves, which put
+  // 69% of its energy below 60Hz: inaudible on a laptop or a phone, felt
+  // rather than heard even on a good speaker, and measured as a flat noise
+  // bed rather than a note because a swept pitch smears across the band. It
+  // was the low-frequency noise. Now it sits on A1 (55Hz) with a shorter
+  // sweep, and a highpass takes away what is left underneath.
   const kick = new Tone.MembraneSynth({
-    pitchDecay: 0.03,
-    octaves: 3,
-    envelope: { attack: 0.004, decay: 0.28, sustain: 0, release: 0.1 },
+    pitchDecay: 0.024,
+    octaves: 2,
+    envelope: { attack: 0.004, decay: 0.26, sustain: 0, release: 0.1 },
   });
-  const kickTone = new Tone.Filter({ frequency: 320, type: 'lowpass', rolloff: -12 }).connect(bus);
-  kick.connect(kickTone);
-  kick.volume.value = -11;
+  const kickTone = new Tone.Filter({ frequency: 340, type: 'lowpass', rolloff: -12 }).connect(bus);
+  const kickFloor = new Tone.Filter({ frequency: 48, type: 'highpass', rolloff: -24 }).connect(kickTone);
+  kick.connect(kickFloor);
+  kick.volume.value = -10;
+
+  // A little beater click, so the kick still reads as a kick on a speaker
+  // that cannot reproduce its body at all.
+  const clickTone = new Tone.Filter({ frequency: 1800, type: 'bandpass', Q: 1.2 }).connect(bus);
+  const click = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.02, sustain: 0 },
+  }).connect(clickTone);
+  click.volume.value = -30;
 
   const snareTone = new Tone.Filter({ frequency: 1500, type: 'bandpass', Q: 0.9 }).connect(bus);
   const snare = new Tone.NoiseSynth({
@@ -37,7 +51,7 @@ export function createDrumKit(bus) {
   }).connect(hatHigh);
   hat.volume.value = -17;
 
-  return { kick, snare, hat };
+  return { kick, click, snare, hat };
 }
 
 // 16 steps to the bar. Kicks syncopate against the backbeat rather than

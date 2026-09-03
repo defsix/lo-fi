@@ -5,7 +5,9 @@
 // the kit sound brittle and the peaks read as crackle. Rolling the top off
 // is also simply how this music sounds. It sits above the hats' band though
 // -- at 7.2k it met the hats' 6.5k highpass and left them a dead slot.
-// A highpass takes out sub-40Hz rumble that only eats headroom.
+// The highpass sits at 50Hz and steeply: the bass fundamentals start at
+// 65Hz and the kick now at 55Hz, so nothing musical lives underneath it,
+// and what did live there was a noise bed no speaker could reproduce.
 //
 // The reverb is shared and algorithmic. Each voice used to own a Tone.Reverb,
 // which is a *convolution* reverb: a 4-second tail means convolving every
@@ -16,7 +18,7 @@
 export function createMaster() {
   const limiter = new Tone.Limiter(-3).toDestination();
   const warmth = new Tone.Filter({ frequency: 9500, type: 'lowpass', rolloff: -12 }).connect(limiter);
-  const rumble = new Tone.Filter({ frequency: 38, type: 'highpass', rolloff: -12 }).connect(warmth);
+  const rumble = new Tone.Filter({ frequency: 50, type: 'highpass', rolloff: -48 }).connect(warmth);
   const bus = new Tone.Volume(-4).connect(rumble);
 
   const reverb = new Tone.Freeverb({ roomSize: 0.72, dampening: 1600, wet: 1 }).connect(bus);
