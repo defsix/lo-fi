@@ -13,7 +13,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outFile = resolve(root, process.argv[2] || 'dist/engine-room.html');
 
 // Dependency order matters: concatenated modules share one scope.
-const MODULES = ['js/theory.js', 'js/master.js', 'js/instruments.js', 'js/drums.js', 'js/engine.js'];
+const MODULES = [
+  'js/theory.js',
+  'js/groove.js',
+  'js/melody.js',
+  'js/arrange.js',
+  'js/master.js',
+  'js/instruments.js',
+  'js/drums.js',
+  'js/engine.js',
+];
 const PAGE = 'js/page.js';
 
 // Every module under js/ is engine code and must be listed above, or the

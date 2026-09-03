@@ -3,6 +3,7 @@ import { chordLabel, romanLabel } from './theory.js';
 
 // ---- visualiser ---------------------------------------------------------
 const engine = new LofiEngine();
+window.__engine = engine; // exposed for timing analysis in tests
 const canvas = document.getElementById('scope');
 const ctx = canvas.getContext('2d');
 const BIN_COUNT = 64;
