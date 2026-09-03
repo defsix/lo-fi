@@ -17,25 +17,25 @@ export function createDrumKit(bus) {
   });
   const kickTone = new Tone.Filter({ frequency: 320, type: 'lowpass', rolloff: -12 }).connect(bus);
   kick.connect(kickTone);
-  kick.volume.value = -8;
+  kick.volume.value = -11;
 
   const snareTone = new Tone.Filter({ frequency: 1500, type: 'bandpass', Q: 0.9 }).connect(bus);
   const snare = new Tone.NoiseSynth({
     noise: { type: 'pink' },
     envelope: { attack: 0.002, decay: 0.14, sustain: 0 },
   }).connect(snareTone);
-  snare.volume.value = -14;
+  snare.volume.value = -12;
 
   // Rolled off at both ends: an open-topped hat is what makes a cheap kit
   // sound brittle.
-  const hatHigh = new Tone.Filter({ frequency: 6500, type: 'highpass' });
-  const hatTop = new Tone.Filter({ frequency: 11000, type: 'lowpass' }).connect(bus);
+  const hatHigh = new Tone.Filter({ frequency: 4200, type: 'highpass' });
+  const hatTop = new Tone.Filter({ frequency: 9000, type: 'lowpass' }).connect(bus);
   hatHigh.connect(hatTop);
   const hat = new Tone.NoiseSynth({
     noise: { type: 'white' },
     envelope: { attack: 0.001, decay: 0.035, sustain: 0 },
   }).connect(hatHigh);
-  hat.volume.value = -26;
+  hat.volume.value = -20;
 
   return { kick, snare, hat };
 }

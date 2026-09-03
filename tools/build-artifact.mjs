@@ -14,6 +14,7 @@ const outFile = resolve(root, process.argv[2] || 'dist/engine-room.html');
 
 // Dependency order matters: concatenated modules share one scope.
 const MODULES = [
+  'js/voicing.js',
   'js/theory.js',
   'js/groove.js',
   'js/melody.js',

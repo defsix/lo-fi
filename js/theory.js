@@ -6,6 +6,11 @@
 // across two octaves. Close root-position stacks are what made the first
 // version sound like a MIDI demo.
 
+import { declutter } from './voicing.js';
+
+// Our absolute pitch numbers count semitones from C0; MIDI counts from C-1.
+const MIDI_OFFSET = 12;
+
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 const FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -73,7 +78,13 @@ export function romanLabel(chord) {
 }
 
 export function buildChords(keyName, progression) {
-  const keyRoot = noteIndex(keyName) + KEYS_OCTAVE * 12;
+  const pitchClass = noteIndex(keyName);
+  // Without this, a piece in Bb sits nearly an octave above one in C purely
+  // because of where its root falls in the octave — the same progression
+  // would read bright in one key and dark in another. Keys above F drop an
+  // octave so every key plays in the same register.
+  const register = pitchClass >= 7 ? KEYS_OCTAVE - 1 : KEYS_OCTAVE;
+  const keyRoot = pitchClass + register * 12;
   const useFlats = keyName.includes('b');
 
   return progression.map(([semitones, quality, roman]) => {
@@ -83,8 +94,12 @@ export function buildChords(keyName, progression) {
       roman,
       quality,
       rootName: toNoteName(root, useFlats),
-      // Rootless in the keys, so the bass owns the bottom of the chord.
-      notes: VOICINGS[quality].map((interval) => toNoteName(root + interval, useFlats)),
+      // Rootless in the keys, so the bass owns the bottom of the chord, and
+      // run past the critical-band check so nothing sits close enough to
+      // beat against its neighbour.
+      notes: declutter(VOICINGS[quality].map((i) => root + i + MIDI_OFFSET)).map((midi) =>
+        toNoteName(midi - MIDI_OFFSET, useFlats)
+      ),
       bassRoot: root - 12,
       // Chord tones for the melody to land on, as absolute semitones.
       tones: [0, ...VOICINGS[quality]].map((interval) => root + interval),

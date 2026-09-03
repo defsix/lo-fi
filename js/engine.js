@@ -169,7 +169,11 @@ export class LofiEngine {
     if (drums.snare.includes(step) || drums.fill.includes(step)) {
       this.drumKit.snare.triggerAttackRelease('16n', time + grooveOffset(step, 'snare'), 0.62 + Math.random() * 0.14);
     }
-    if (drums.ghosts.includes(step)) {
+    // A ghost and a backbeat hit on the same step would schedule two notes
+    // on one voice out of order, since the ghost sits earlier in the groove
+    // than the snare — Tone rejects the second as going back in time.
+    const struck = drums.snare.includes(step) || drums.fill.includes(step);
+    if (!struck && drums.ghosts.includes(step)) {
       this.drumKit.snare.triggerAttackRelease('32n', time + grooveOffset(step, 'ghost'), 0.12 + Math.random() * 0.08);
     }
     if (drums.hats.includes(step)) {
