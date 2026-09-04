@@ -359,7 +359,7 @@ one. With safety at 0.75 and the ratios measured on the Pixel:
 | Chrome, 2.07x | 2 → 3 → 4 → 6 → 9 → 13 → 16 | ~2 min |
 | a device at 1.1x | holds at 2 bars | never, correctly |
 
-Nothing is forced. A first version grew by at least a bar time regardless
+Nothing is forced. A first version grew by at least a bar each time regardless
 of what the device could afford, which at 1.3x meant asking for three bars
 during two bars of playback — arithmetic that cannot be met — and it ran at
 the edge of stalling. Holding is right when growth is unaffordable, and
