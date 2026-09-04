@@ -100,8 +100,14 @@
   </div>
 
   <div class="test">
-    <span class="label">context</span>
-    <span class="what" id="info">press a test to read the audio context</span>
+    <span class="label">device audio path</span>
+    <span class="what" id="info">press any test to read the audio context</span>
+    <button id="copy">copy diagnostics</button>
+    <span class="note">
+      The same Firefox version behaves differently on different devices, so
+      this is the part that varies: the rate the device runs at and how much
+      buffering it gives the browser. Small buffering is what underruns.
+    </span>
   </div>
 </main>
 
@@ -114,13 +120,40 @@
     return ctx;
   }
 
-  function report() {
+  function diagnostics() {
     const c = context();
-    info.textContent =
-      `sample rate ${c.sampleRate}Hz · state ${c.state} · ` +
-      `baseLatency ${c.baseLatency !== undefined ? c.baseLatency.toFixed(4) + 's' : 'n/a'} · ` +
-      `outputLatency ${c.outputLatency !== undefined ? c.outputLatency.toFixed(4) + 's' : 'n/a'}`;
+    const ms = (v) => (typeof v === 'number' ? (v * 1000).toFixed(1) + 'ms' : 'n/a');
+    return [
+      `sample rate:    ${c.sampleRate} Hz`,
+      `base latency:   ${ms(c.baseLatency)}`,
+      `output latency: ${ms(c.outputLatency)}`,
+      `state:          ${c.state}`,
+      `device pixels:  ${window.devicePixelRatio}`,
+      `agent:          ${navigator.userAgent}`,
+    ].join('\n');
   }
+
+  function report() {
+    info.textContent = diagnostics();
+    info.style.whiteSpace = 'pre-wrap';
+    info.style.wordBreak = 'break-word';
+  }
+
+  document.getElementById('copy').addEventListener('click', async () => {
+    const button = document.getElementById('copy');
+    try {
+      await navigator.clipboard.writeText(diagnostics());
+      button.textContent = 'copied';
+    } catch (err) {
+      // Clipboard access is often refused; showing the text is just as good.
+      report();
+      button.textContent = 'shown above - select and copy';
+    }
+    setTimeout(() => { button.textContent = 'copy diagnostics'; }, 2500);
+  });
+
+  // Read it straight away, so the numbers are there before anything plays.
+  try { report(); } catch (err) { /* context not allowed until a gesture */ }
 
   // --- 1: a looping tone through <audio>, built as a WAV in memory so the
   // page stays self-contained and no network is involved.
