@@ -12,7 +12,7 @@ if (throttle > 1) {
   await client.send('Emulation.setCPUThrottlingRate', { rate: throttle });
 }
 
-await page.goto('http://localhost:8080/index.html', { waitUntil: 'domcontentloaded' });
+await page.goto('http://localhost:8080/live.html', { waitUntil: 'domcontentloaded' });
 await page.click('#play');
 await page.waitForTimeout(1000);
 

@@ -1,7 +1,7 @@
 // Keeping an endless stream running from finite chunks.
 //
 // One <audio> element cannot be seamless: swapping its source leaves a gap.
-// So there are two, alternating. Each chunk is rendered with a tail of
+// So there is a small ring of them. Each chunk is rendered with a tail of
 // reverb and release past the end of its music, and the next chunk starts
 // when the current one reaches the end of its *music* — so the outgoing
 // tail rings over the incoming downbeat, and the seam is covered by decay
@@ -11,6 +11,14 @@
 // point: rendering is several times faster than playback, so the work
 // finishes long before it is needed and the device is then idle. That idle
 // is what survives the screen going off.
+//
+// Three elements rather than two, which is not obvious and was arrived at by
+// measurement. At any moment one is playing, one is still ringing the tail
+// of the chunk before it, and one is free to have the next chunk loaded onto
+// it. With only two, loading the next chunk necessarily reused the element
+// still ringing — cutting its tail off mid-decay and opening the very gap
+// the tail exists to cover. Measured, that took the longest silence from
+// 100ms to 320ms.
 
 import { renderChunk, toWavBlob, SECONDS_PER_BAR } from './render.js';
 import { createComposition } from './compose.js';
@@ -41,6 +49,9 @@ const RENDER_SAFETY = 0.75;
 // of error are covered by the decay.
 const HANDOVER_LEAD = 0.12;
 
+// Playing, still-ringing, and free-to-load. See the note at the top.
+const ELEMENT_COUNT = 3;
+
 export class LofiStream {
   constructor(options = {}) {
     this.bypass = new Set(options.bypass || []);
@@ -58,8 +69,8 @@ export class LofiStream {
     this.playing = false;
     this.volume = 0.8;
 
-    // Two elements, alternating. Created lazily so construction does not
-    // touch the DOM before the page has one.
+    // A ring of three. Created lazily so construction does not touch the DOM
+    // before the page has one.
     this.elements = [];
     this.active = 0;
     this.pending = null;   // a render in flight
@@ -132,6 +143,9 @@ export class LofiStream {
         chunk.buffer = null;
         this.queued = chunk;
         this.pending = null;
+        // Load it onto the idle element straight away, so the browser has a
+        // whole chunk's playback to get it ready in.
+        if (this.current) this._stage((this.active + 1) % ELEMENT_COUNT, chunk);
         return chunk;
       })
       .catch((err) => {
@@ -142,6 +156,21 @@ export class LofiStream {
     return this.pending;
   }
 
+  // Put a rendered chunk on an element and let the browser load it now,
+  // rather than at the moment it has to start. A chunk is several megabytes
+  // of WAV, and setting src at the seam meant the browser was fetching and
+  // decoding it exactly when it needed to be playing — which is audible as
+  // a crackle at the handover, and worst when the device is busy or the
+  // screen is off.
+  _stage(index, chunk) {
+    const el = this._element(index);
+    el.src = chunk.url;
+    el.volume = this.volume;
+    el.load();
+    chunk.element = index;
+    return el;
+  }
+
   async start() {
     if (this.playing) return;
     this.playing = true;
@@ -150,14 +179,14 @@ export class LofiStream {
     const first = this.queued || (await this._renderAhead());
     if (!this.playing) return; // stopped while rendering
     this.queued = null;
+    if (first.element === undefined) this._stage(this.active, first);
     await this._play(first);
     this._renderAhead(); // get ahead immediately
   }
 
   async _play(chunk) {
     const el = this._element(this.active);
-    el.src = chunk.url;
-    el.volume = this.volume;
+    if (chunk.element !== this.active) this._stage(this.active, chunk);
     el.currentTime = 0;
     this.current = chunk;
     await el.play().catch(() => { /* a stop raced the play */ });
@@ -167,45 +196,53 @@ export class LofiStream {
     clearTimeout(this.handoverTimer);
     const wait = Math.max(0, chunk.musicSeconds - HANDOVER_LEAD) * 1000;
     this.handoverTimer = setTimeout(() => this._handover(), wait);
+
+    // A backstop for a throttled timer. With the screen off the timer above
+    // can fire late, and by then the tail has run out and the gap is real.
+    // The element's own end event comes from the media pipeline, so if it
+    // arrives first, hand over immediately rather than waiting.
+    el.onended = () => {
+      if (this.playing && this.current === chunk) this._handover();
+    };
   }
 
   async _handover() {
     if (!this.playing) return;
+    clearTimeout(this.handoverTimer);
     const outgoing = this._element(this.active);
+    outgoing.onended = null;
     const next = this.queued || (await this._renderAhead().catch(() => null));
     if (!this.playing || !next) return;
     this.queued = null;
 
-    // Swap to the other element so the outgoing tail keeps sounding.
-    this.active = this.active === 0 ? 1 : 0;
+    // Move to the next element in the ring; the outgoing one keeps sounding
+    // its tail on the element we just left.
+    this.active = next.element !== undefined ? next.element : (this.active + 1) % ELEMENT_COUNT;
     await this._play(next);
 
     // Let the old one finish its tail, then free it. Revoking the URL while
     // it is still playing would cut the decay short.
     const url = outgoing.src;
     setTimeout(() => {
+      // Only if nothing has been staged onto it since: the next render may
+      // already have claimed this element for the chunk after next.
       if (outgoing.src === url) {
         outgoing.pause();
         outgoing.removeAttribute('src');
         outgoing.load();
+        URL.revokeObjectURL(url);
       }
-      URL.revokeObjectURL(url);
     }, 4000);
 
     this._renderAhead();
   }
 
-  // Takes effect on the next chunk. Re-rendering what is already playing to
-  // apply it immediately would cost more than waiting a chunk.
+  // For setting the texture levels from the console while they are being
+  // tuned. Takes effect on the next chunk rendered, so it can be a couple of
+  // chunks before it is heard — which is why this is not a control on the
+  // page. The right levels are something to arrive at, not to hand over.
   setTexture(amount) {
     this.texture = Math.max(0, Math.min(1, Number(amount) || 0));
-    // Drop anything rendered but not yet playing, so the change arrives at
-    // the next handover rather than the one after.
-    if (this.queued && !this.pending) {
-      URL.revokeObjectURL(this.queued.url);
-      this.nextBar = this.queued.startBar;
-      this.queued = null;
-    }
   }
 
   setVolume(percent) {

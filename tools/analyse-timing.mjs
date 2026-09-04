@@ -14,7 +14,7 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-await page.goto('http://localhost:8080/index.html', { waitUntil: 'domcontentloaded' });
+await page.goto('http://localhost:8080/live.html', { waitUntil: 'domcontentloaded' });
 await page.click('#play');
 await page.waitForTimeout(400);
 

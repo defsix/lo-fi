@@ -1,4 +1,4 @@
-// Bundles index.html into a single self-contained page.
+// Bundles the live-engine page (live.html) into a single self-contained file.
 //
 // The hosted listening page can't fetch anything — no CDN, no module
 // imports — so Tone.js and every engine module are inlined, and the
@@ -30,9 +30,9 @@ const MODULES = [
 ];
 const PAGE = 'js/page.js';
 
-// Modules belonging to stream.html rather than index.html. They are not
-// dead code, they are another page's code, and bundling them into this one
-// would ship a renderer to a page that plays live.
+// Modules belonging to the rendered-stream page (index.html) rather than
+// the live engine. They are not dead code, they are another page's code,
+// and bundling them here would ship a renderer to a page that plays live.
 const OTHER_PAGES = ['js/render.js', 'js/stream.js', 'js/texture.js'];
 
 // Every other module under js/ is engine code and must be listed above, or
@@ -64,9 +64,9 @@ for (const [source, label] of [[tone, 'vendor/tone.js'], [bundle, 'engine module
 const TONE_TAG = '<script src="vendor/tone.js"></script>';
 const PAGE_TAG = '<script type="module" src="js/page.js"></script>';
 
-let html = read('index.html');
+let html = read('live.html');
 for (const [tag, label] of [[TONE_TAG, 'Tone'], [PAGE_TAG, 'page']]) {
-  if (!html.includes(tag)) throw new Error(`index.html no longer has the ${label} script tag the bundler replaces`);
+  if (!html.includes(tag)) throw new Error(`live.html no longer has the ${label} script tag the bundler replaces`);
 }
 
 html = html

@@ -337,8 +337,30 @@ Firefox problem as well, which is where "browser agnostic" comes from.
   matter.
 - `stream.html` — the player.
 
-Measured over 30 s and two handovers: longest silence 100 ms, shorter than
-a musical rest. At a 16-bar chunk, handover fires at 51.79 s against 51.9 s
+Measured over 30 s and two handovers, with every silence located against
+the handover times rather than merely counted: no silence at any seam. The
+silences that do appear are musical rests in sparse sections, which an
+earlier version of this measurement reported as gaps because it counted
+duration without asking where.
+
+Two things had to be right for that:
+
+- **The next chunk is loaded onto its element as soon as it is rendered**,
+  not at the seam. A chunk is several megabytes of WAV, and setting `src`
+  at the handover meant the browser fetched and decoded it exactly when it
+  needed to be playing. Reported from the device as an occasional crackle
+  at the point the track cycled, and worst with the screen off. Now each
+  chunk is staged a second or more ahead and its element reports
+  `readyState: 4` before it is needed.
+- **Three elements, not two.** At any moment one is playing, one is still
+  ringing the previous chunk's tail, and one is free to be loaded. With two,
+  staging the next chunk necessarily reused the element still ringing,
+  cutting its tail off mid-decay and opening the very gap the tail exists to
+  cover.
+
+The handover also has a backstop: with the screen off its timer can fire
+late, so the playing element's `ended` event triggers the handover if it
+arrives first. At a 16-bar chunk, handover fires at 51.79 s against 51.9 s
 of music, with both elements sounding across the seam.
 
 ### Chunks start short and grow

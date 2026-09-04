@@ -29,8 +29,14 @@ export function createVinyl(destination, { crackle = 0.5, hiss = 0.5 } = {}) {
   hissNoise.start();
   parts.push(hissFilter, hissNoise);
 
-  // The dust: bandpassed noise, opened in short irregular bursts. A envelope
-  // per burst rather than a continuous source, so each one has an attack.
+  // Dialled well back after listening: the first pass read as a damaged
+  // record rather than a played one. Dust should be something you notice
+  // only when it stops.
+  const CRACKLE_LEVEL = 0.25;
+
+  // The dust: bandpassed noise, opened in short irregular bursts. An
+  // envelope per burst rather than a continuous source, so each has an
+  // attack.
   const crackleFilter = new Tone.Filter({ frequency: 2600, type: 'bandpass', Q: 1.1 }).connect(destination);
   const crackleGain = new Tone.Gain(0).connect(crackleFilter);
   const crackleNoise = new Tone.Noise('white').connect(crackleGain);
@@ -47,7 +53,7 @@ export function createVinyl(destination, { crackle = 0.5, hiss = 0.5 } = {}) {
       const pops = Math.round((3 + rng() * 5) * crackle);
       for (let i = 0; i < pops; i++) {
         const at = time + rng() * seconds;
-        const level = (0.04 + rng() * 0.13) * crackle;
+        const level = (0.04 + rng() * 0.13) * crackle * CRACKLE_LEVEL;
         // Short and asymmetric: fast in, slightly slower out.
         crackleGain.gain.setValueAtTime(0, at);
         crackleGain.gain.linearRampToValueAtTime(level, at + 0.0015);
@@ -60,25 +66,30 @@ export function createVinyl(destination, { crackle = 0.5, hiss = 0.5 } = {}) {
 
 // --- tape ----------------------------------------------------------------
 
-// Wow is the slow drift of a tape machine's speed; flutter is the faster
-// wobble on top. Both are pitch modulation, made here by modulating a short
-// delay — the standard way, and cheaper than resampling.
+// Flutter: the fast, shallow wobble of a tape machine, made by modulating a
+// short delay, which is the standard way and cheaper than resampling. See
+// below for why the slower wow that belongs beside it is not here.
 export function createTapeWobble(destination, { depth = 0.5 } = {}) {
   const parts = [];
   const delay = new Tone.Delay({ delayTime: 0.006, maxDelay: 0.05 }).connect(destination);
 
-  // 0.5-2 Hz for wow, per the sources. Slow enough to hear as drift rather
-  // than vibrato.
-  const wow = new Tone.LFO({ frequency: 0.7, min: 0.004, max: 0.004 + 0.005 * depth }).start();
-  wow.connect(delay.delayTime);
+  // Wow — the slow speed drift, 0.5-2 Hz in the sources — is gone. At the
+  // sourced depth it was plainly audible on this material as pitch
+  // instability rather than character: sustained keys bend, and a bent
+  // major seventh sounds like a mistake, not like tape. The sources are
+  // describing a whole mix where transients and noise mask the drift; four
+  // held notes and a lot of space is the worst case for it.
+  //
+  // Flutter stays, at a third of its first depth. It is fast enough to
+  // thicken rather than bend, which is the part worth having.
+  const flutter = new Tone.LFO({
+    frequency: 6.3,
+    min: -0.0002 * depth,
+    max: 0.0002 * depth,
+  }).start();
+  flutter.connect(delay.delayTime);
 
-  // Flutter is faster and much shallower; it thickens rather than bends.
-  const flutter = new Tone.LFO({ frequency: 6.3, min: -0.0006 * depth, max: 0.0006 * depth }).start();
-  const flutterScale = new Tone.Gain(1);
-  flutter.connect(flutterScale);
-  flutterScale.connect(delay.delayTime);
-
-  parts.push(delay, wow, flutter, flutterScale);
+  parts.push(delay, flutter);
   return { parts, node: delay };
 }
 
