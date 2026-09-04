@@ -33,7 +33,7 @@ const PAGE = 'js/page.js';
 // Modules belonging to stream.html rather than index.html. They are not
 // dead code, they are another page's code, and bundling them into this one
 // would ship a renderer to a page that plays live.
-const OTHER_PAGES = ['js/render.js', 'js/stream.js'];
+const OTHER_PAGES = ['js/render.js', 'js/stream.js', 'js/texture.js'];
 
 // Every other module under js/ is engine code and must be listed above, or
 // the bundle fails at runtime with a missing function.

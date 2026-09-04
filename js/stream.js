@@ -44,6 +44,9 @@ const HANDOVER_LEAD = 0.12;
 export class LofiStream {
   constructor(options = {}) {
     this.bypass = new Set(options.bypass || []);
+    // 1 is lo-fi, 0 is clean. Switchable while playing: it takes effect on
+    // the next chunk, since the current one is already rendered.
+    this.texture = options.texture == null ? 1 : Number(options.texture);
     // ?bars= pins the size and turns the ramp off, for measuring.
     this.fixedBars = Number(options.barsPerChunk) || null;
     this.nextChunkBars = this.fixedBars || FIRST_CHUNK_BARS;
@@ -115,6 +118,7 @@ export class LofiStream {
       startBar,
       bars,
       bypass: this.bypass,
+      texture: this.texture,
     })
       .then((chunk) => {
         const renderSeconds = (performance.now() - startedAt) / 1000;
@@ -189,6 +193,19 @@ export class LofiStream {
     }, 4000);
 
     this._renderAhead();
+  }
+
+  // Takes effect on the next chunk. Re-rendering what is already playing to
+  // apply it immediately would cost more than waiting a chunk.
+  setTexture(amount) {
+    this.texture = Math.max(0, Math.min(1, Number(amount) || 0));
+    // Drop anything rendered but not yet playing, so the change arrives at
+    // the next handover rather than the one after.
+    if (this.queued && !this.pending) {
+      URL.revokeObjectURL(this.queued.url);
+      this.nextBar = this.queued.startBar;
+      this.queued = null;
+    }
   }
 
   setVolume(percent) {

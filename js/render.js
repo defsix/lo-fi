@@ -18,6 +18,7 @@ import { createMaster } from './master.js';
 import { createKeys, createLead, createBass } from './instruments.js';
 import { createDrumKit } from './drums.js';
 import { planBar, eventsForBar } from './compose.js';
+import { createVinyl, createTapeWobble, createSaturation, createPump } from './texture.js';
 
 export const BPM = 74;
 export const SECONDS_PER_BAR = (60 / BPM) * 4;
@@ -39,8 +40,14 @@ function fire(voice, event) {
  * Returns { buffer, startBar, bars, plans } — plans so the caller can show
  * what is playing without re-deriving it.
  */
-export async function renderChunk({ state, startBar, bars, bypass = new Set() }) {
+/**
+ * `texture` is the lo-fi character: vinyl, tape wobble, saturation and the
+ * pump against the kick. 0 is clean, 1 is the full amount. Clean is a real
+ * choice rather than a degraded mode, and it is also the cheaper render.
+ */
+export async function renderChunk({ state, startBar, bars, bypass = new Set(), texture = 1 }) {
   const musicSeconds = bars * SECONDS_PER_BAR;
+  const dirt = Math.max(0, Math.min(1, texture));
 
   // Decide the whole chunk before rendering. planBar advances the
   // composition, and doing it outside Tone.Offline keeps the render callback
@@ -52,12 +59,31 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set() })
     Tone.getTransport().bpm.value = BPM;
     const master = createMaster(bypass);
     const light = bypass.has('light');
+    // Texture goes between the voices and the master, so it colours the
+    // whole record rather than any one instrument. Built back to front:
+    //
+    //   voices -> pump -> saturation -> tape wobble -> master bus
+    //
+    // The vinyl is the exception and joins at the bus. Dust on a record's
+    // surface is not something the music passes through, and it should not
+    // be ducked by the kick or bent by the tape either.
+    let vinyl = null;
+    let pump = null;
+    let target = master.bus;
+    if (dirt > 0) {
+      vinyl = createVinyl(master.bus, { crackle: dirt, hiss: dirt });
+      const wobble = createTapeWobble(master.bus, { depth: dirt });
+      const saturation = createSaturation(wobble.node, { amount: 0.35 * dirt });
+      pump = createPump(saturation.node, { depth: 0.3 * dirt });
+      target = pump.node;
+    }
+
     const voices = {
-      keys: light ? null : createKeys(master.bus, master.send, bypass),
-      lead: light ? null : createLead(master.bus, master.send, bypass),
-      bass: createBass(master.bus),
+      keys: light ? null : createKeys(target, master.send, bypass),
+      lead: light ? null : createLead(target, master.send, bypass),
+      bass: createBass(target),
     };
-    const kit = createDrumKit(master.bus);
+    const kit = createDrumKit(target);
     const targets = {
       kick: kit.kick, click: kit.click, snare: kit.snare, hat: kit.hat,
       keys: voices.keys, bass: voices.bass, lead: voices.lead,
@@ -79,6 +105,12 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set() })
         if (!voice || bypass.has(name)) continue;
         for (const event of list) fire(voice, { ...event, time: barStart + event.time });
       }
+
+      // The record's own surface, and the mix breathing against the kick.
+      // Both scheduled bar by bar, because an offline render has no timer to
+      // run them from.
+      if (vinyl) vinyl.scheduleBar(barStart, SECONDS_PER_BAR);
+      if (pump) for (const kick of events.kick) pump.duck(barStart + kick.time);
     }
     Tone.getTransport().start();
   }, musicSeconds + TAIL_SECONDS);

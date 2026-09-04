@@ -256,11 +256,12 @@ Everything above 1 kHz being empty is a defect, not a style.
 | Comping and walking bass | done — `js/arrange.js` |
 | Ghost notes, fills, pattern variation | done — `js/drums.js` |
 | Spectral balance | corrected, verify by ear |
-| Vinyl crackle and tape hiss | not started |
-| Wow and flutter | not started |
-| Sidechain pump | not started |
-| Saturation | not started |
+| Vinyl crackle and tape hiss | done — `js/texture.js` |
+| Wow and flutter | done — `js/texture.js` |
+| Sidechain pump | done — `js/texture.js` |
+| Saturation | done — `js/texture.js` |
 | Sectional arrangement | done — `js/sections.js` |
+| Clean / lo-fi switch | done — `stream.html` |
 | Fixed voice pool, playback-sized buffer | done — see `docs/audio-performance.md` |
 
 ---
