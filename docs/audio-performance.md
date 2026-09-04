@@ -338,8 +338,32 @@ Firefox problem as well, which is where "browser agnostic" comes from.
 - `stream.html` — the player.
 
 Measured over 30 s and two handovers: longest silence 100 ms, shorter than
-a musical rest. At the default 16-bar chunk, handover fires at 51.79 s
-against 51.9 s of music, with both elements sounding across the seam.
+a musical rest. At a 16-bar chunk, handover fires at 51.79 s against 51.9 s
+of music, with both elements sounding across the seam.
+
+### Chunks start short and grow
+
+A first chunk of 52 seconds means 25 seconds of silence after pressing
+play, which is not a thing to ask of someone who just pressed play. So the
+first chunk is two bars, and the size climbs once sound is going.
+
+How fast it may climb is arithmetic, not taste. Chunk N renders while chunk
+N-1 plays, so `render(b) <= safety * play(bars)`, which gives
+`b <= safety * bars * ratio` — and the ratio is measured from each render
+rather than assumed, so a slow device is handled by the same rule as a fast
+one. With safety at 0.75 and the ratios measured on the Pixel:
+
+| | ramp | reaches 16 bars |
+|---|---|---|
+| Firefox, 4.27x | 2 → 6 → 16 bars | ~26 s |
+| Chrome, 2.07x | 2 → 3 → 4 → 6 → 9 → 13 → 16 | ~2 min |
+| a device at 1.1x | holds at 2 bars | never, correctly |
+
+Nothing is forced. A first version grew by at least a bar time regardless
+of what the device could afford, which at 1.3x meant asking for three bars
+during two bars of playback — arithmetic that cannot be met — and it ran at
+the edge of stalling. Holding is right when growth is unaffordable, and
+shrinking is what keeps the music going when even the current size is.
 
 ## Verdict on live screen-off playback
 
