@@ -148,6 +148,14 @@ setInterval(() => {
   const level = engine.getLevel();
   const state = engine.getContextState();
 
+  // Under ?debug, show what the device actually granted, so a request for
+  // more buffering can be confirmed rather than assumed.
+  if (params.has('debug') && window.Tone) {
+    const c = Tone.getContext().rawContext;
+    const ms = (v) => (typeof v === 'number' ? (v * 1000).toFixed(1) + 'ms' : 'n/a');
+    setStatus(`${c.sampleRate}Hz · output latency ${ms(c.outputLatency)} · base ${ms(c.baseLatency)} · requested ${engine.latencyHint === null ? 'browser default' : engine.latencyHint}`);
+  }
+
   if (level === null) {
     outputEl.textContent = 'meter off';
     return;

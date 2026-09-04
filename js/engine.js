@@ -17,7 +17,11 @@ export class LofiEngine {
   constructor(options = {}) {
     this.bypass = new Set(options.bypass || []);
     // Null means: leave the browser's own default alone. See start().
-    this.latencyHint = options.latencyHint || null;
+    // A number is seconds of requested buffering, which is far more direct
+    // than the vague 'playback' hint and is what a device on the low-latency
+    // audio path needs: a ~15ms buffer leaves the callback no slack at all.
+    const hint = options.latencyHint;
+    this.latencyHint = hint == null || hint === '' ? null : (Number.isNaN(Number(hint)) ? hint : Number(hint));
     this.master = null;
     this.keys = null;
     this.lead = null;
