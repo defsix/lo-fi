@@ -86,6 +86,20 @@
   </div>
 
   <div class="test">
+    <span class="label">6 &middot; heavy parameter automation</span>
+    <span class="what">Two permanent oscillators, but ~60 scheduled parameter changes a second &mdash; ramps on gain and frequency, which is what an engine full of envelopes actually does. No new nodes, no library.</span>
+    <button id="b6">play automation storm</button>
+    <span class="note">Crackles here &rarr; the density of AudioParam automation is the trigger, and this page is a minimal reproduction worth filing.</span>
+  </div>
+
+  <div class="test">
+    <span class="label">7 &middot; many voices at once</span>
+    <span class="what">Twenty-four oscillators through gains and filters, all running, quiet and steady. Tests the size of the graph rather than what is scheduled on it.</span>
+    <button id="b7">play large graph</button>
+    <span class="note">Crackles here &rarr; it is the node count, and the fix is fewer voices rather than fewer events.</span>
+  </div>
+
+  <div class="test">
     <span class="label">context</span>
     <span class="what" id="info">press a test to read the audio context</span>
   </div>
@@ -243,6 +257,94 @@
     }, EVERY);
     b5.dataset.on = 'true';
     b5.textContent = 'stop gated notes';
+    report();
+  });
+
+  // --- 6: the same handful of nodes, hammered with automation. The engine
+  // schedules an envelope per note across several parameters, which comes to
+  // tens of scheduled changes a second; none of the tests above go near that.
+  let stormTimer = null;
+  let stormNodes = null;
+  const b6 = document.getElementById('b6');
+  b6.addEventListener('click', async () => {
+    const c = context();
+    await c.resume();
+    if (stormTimer) {
+      clearInterval(stormTimer);
+      stormTimer = null;
+      stormNodes.oscs.forEach((o) => { o.stop(); o.disconnect(); });
+      stormNodes.gains.forEach((g) => g.disconnect());
+      stormNodes = null;
+      b6.dataset.on = 'false';
+      b6.textContent = 'play automation storm';
+      return;
+    }
+    const oscs = [];
+    const gains = [];
+    for (let i = 0; i < 2; i++) {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = 'triangle';
+      o.frequency.value = 220 * (i + 1);
+      g.gain.value = 0.05;
+      o.connect(g).connect(c.destination);
+      o.start();
+      oscs.push(o);
+      gains.push(g);
+    }
+    stormNodes = { oscs, gains };
+    let n = 0;
+    // 20 ticks a second, three scheduled changes each, on two voices.
+    stormTimer = setInterval(() => {
+      const at = c.currentTime + 0.06;
+      oscs.forEach((o, i) => {
+        const g = gains[i];
+        g.gain.cancelScheduledValues(at);
+        g.gain.setValueAtTime(0.02, at);
+        g.gain.linearRampToValueAtTime(0.08, at + 0.01);
+        g.gain.linearRampToValueAtTime(0.02, at + 0.04);
+        o.frequency.setValueAtTime(180 + ((n * 37 + i * 90) % 240), at);
+      });
+      n++;
+    }, 50);
+    b6.dataset.on = 'true';
+    b6.textContent = 'stop automation storm';
+    report();
+  });
+
+  // --- 7: a big but idle graph, to separate size from activity.
+  let bigGraph = null;
+  const b7 = document.getElementById('b7');
+  b7.addEventListener('click', async () => {
+    const c = context();
+    await c.resume();
+    if (bigGraph) {
+      bigGraph.forEach((n) => { try { n.stop(); } catch (e) { /* not a source */ } n.disconnect(); });
+      bigGraph = null;
+      b7.dataset.on = 'false';
+      b7.textContent = 'play large graph';
+      return;
+    }
+    bigGraph = [];
+    const out = c.createGain();
+    out.gain.value = 0.02;
+    out.connect(c.destination);
+    bigGraph.push(out);
+    for (let i = 0; i < 24; i++) {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      const f = c.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 1200 + i * 60;
+      o.type = i % 2 ? 'triangle' : 'sine';
+      o.frequency.value = 110 + i * 17;
+      g.gain.value = 0.04;
+      o.connect(g).connect(f).connect(out);
+      o.start();
+      bigGraph.push(o, g, f);
+    }
+    b7.dataset.on = 'true';
+    b7.textContent = 'stop large graph';
     report();
   });
 
