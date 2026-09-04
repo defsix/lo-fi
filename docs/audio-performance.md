@@ -117,9 +117,32 @@ sibling element could never have worked.
 So `?stream` routes the mix itself into a `MediaStreamAudioDestinationNode`
 and plays *that* through an `<audio>` element. Measured, the speakers path
 drops to zero and the stream carries the full signal at the same level, so
-the mix moves rather than doubling. It is opt-in until it is shown clean on
-a real device, because it moves the entire output onto a different path.
-`?bypass=keepalive` disables the element side for comparison.
+the mix moves rather than doubling.
+
+**Tested on the Pixel, and it does not work either.** No lock-screen
+controls, background playback still around a tenth audible, and no change
+to the crackle. The likely reason is that a live `MediaStream` has no
+duration, and the five-second rule that grants full audio focus cannot be
+satisfied by something that never ends.
+
+That is three attempts — a silent sibling element, a six-second one, and
+the real mix through a stream — all reasoned from Chrome's own
+documentation, and none of them produce a media session on this device.
+The conclusion recorded here is that **background playback with the screen
+off is not currently achievable for this page from web APIs alone.** What
+reliably gets background audio on Android is an `<audio>` element with a
+real, finite, seekable resource, and a synthesiser generating sound live
+has none of those things to offer.
+
+The routes that remain, none of them small: encode the generated audio in
+the browser and feed it through Media Source Extensions so it looks like
+real media; ship as an installed app; or accept that this plays with the
+screen on. The user-side lever is Android's per-app battery setting,
+Optimised to Unrestricted, which is documented as the most effective fix
+for exactly this and which no web page can reach.
+
+`?stream` stays, opt-in, because it costs nothing and the platform may
+change. `?bypass=keepalive` disables the element side for comparison.
 
 Firefox fixed background-tab `setTimeout` throttling for pages with an
 AudioContext in Firefox 50 ([bug 1181073][7]), but that is desktop tab
