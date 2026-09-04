@@ -41,11 +41,18 @@ Each of these was tested, not assumed.
 |---|---|---|---|---|---|
 | Sony Xperia XQ-BC52 | 13 | 155.0 | 48000 | 7.7 ms | clean |
 | Pixel 10 Pro | 17 | 155.0 | 48000 | 14.7 ms | crackles |
-| Galaxy Tab S5 | — | 155.0 | — | — | crackles, worse |
+| Galaxy Tab S5 | reports desktop UA | 155.0 | 48000 | 80.0 ms | crackles, worst |
 
-Same browser build, same sample rate, opposite results, and the clean device
-has half the buffering. The variable that tracks the symptom is the **Android
-version**, not the hardware, the rate, or the buffer size.
+Same browser build, same sample rate, three different results. Buffering is
+conclusively not the mechanism: the amount of it spans a factor of ten and
+runs the wrong way, with the *cleanest* device having the *least* and the
+worst having by far the most. Anything that asks for a bigger buffer,
+`latencyHint` included, is aimed at the wrong thing.
+
+The tablet reports `X11; Linux x86_64`, which is Firefox's desktop-site mode
+rather than a real desktop, so its Android version is masked and it cannot
+join the version correlation. Of the two that can, the clean one is on
+Android 13 and the failing one on 17.
 
 ## What to try
 
