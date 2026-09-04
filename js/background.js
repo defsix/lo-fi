@@ -36,7 +36,17 @@
 
 // While hidden, schedule this far ahead instead of the usual fraction of a
 // second, so a throttled timer still leaves continuous music behind it.
-const HIDDEN_LOOKAHEAD = 4;
+//
+// The number matters more than it looks. Notes handed to Web Audio play on
+// the audio thread, which keeps rendering with the screen off; it is only
+// the scheduling that Android freezes. So the horizon is how long the music
+// survives without a single timer firing.
+//
+// Measured, with the main thread frozen solid for ten seconds: at a
+// fraction of a second's horizon, 5% of that stretch had sound. At thirty
+// seconds, 79%. The first of those matches what a phone actually did with a
+// four-second horizon, which is how this number was found to be wrong.
+const HIDDEN_LOOKAHEAD = 30;
 
 // A few milliseconds of silence, looped. Built here rather than shipped as
 // a base64 blob so it is readable: a 44-byte WAV header over zeroed samples.

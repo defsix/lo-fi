@@ -19,6 +19,19 @@
 // how the whole mix can be routed into a MediaStream and played through an
 // <audio> element instead — see background.js for why that is worth doing.
 export function createMaster(bypass = new Set(), output = null) {
+  // Every node built here is tracked so the whole chain can be torn down on
+  // stop. Muting the bus is not enough: the reverb send is fed in parallel
+  // with it, so a tail keeps sounding after the bus has gone quiet.
+  const built = [];
+  const keep = (node) => { built.push(node); return node; };
+  const dispose = () => {
+    for (const node of built) {
+      try {
+        if (node && typeof node.dispose === 'function') node.dispose();
+      } catch (_) { /* already gone */ }
+    }
+    built.length = 0;
+  };
   const sink = (node) => (output ? node.connect(output) : node.toDestination());
   // Each stage can be bypassed from the URL, so a browser-specific fault can
   // be bisected on the machine that actually has it.
@@ -32,22 +45,22 @@ export function createMaster(bypass = new Set(), output = null) {
   // ceiling: it is a compressor, and its attack lets transients through
   // above the threshold. Measured, peaks were reaching -0.5dBFS against a
   // -6 threshold. This puts a fixed, predictable gap below full scale.
-  const trim = sink(new Tone.Gain(0.7));
+  const trim = sink(keep(new Tone.Gain(0.7)));
   const limiter = bypass.has('limiter')
-    ? new Tone.Gain(1).connect(trim)
-    : new Tone.Limiter(-6).connect(trim);
+    ? keep(new Tone.Gain(1)).connect(trim)
+    : keep(new Tone.Limiter(-6)).connect(trim);
   // ?bypass=master sends the bus straight out, skipping every master stage.
   // This is the one part of the chain that has never been tested: the
   // capture taps the bus, which is *upstream* of all of it.
   if (bypass.has('master')) {
-    const bare = sink(new Tone.Volume(-4));
-    return { bus: bare, send: new Tone.Gain(0) };
+    const bare = sink(keep(new Tone.Volume(-4)));
+    return { bus: bare, send: keep(new Tone.Gain(0)), dispose };
   }
 
   const filtersOff = bypass.has('filters');
   const warmth = filtersOff
     ? limiter
-    : new Tone.Filter({ frequency: 9500, type: 'lowpass', rolloff: -12 }).connect(limiter);
+    : keep(new Tone.Filter({ frequency: 9500, type: 'lowpass', rolloff: -12 })).connect(limiter);
 
   // The arrangement rides this filter's cutoff, so it is only handed back
   // when it really is a filter: with filters bypassed `warmth` is the
@@ -62,28 +75,28 @@ export function createMaster(bypass = new Set(), output = null) {
   // The steep version is four cascaded biquads; the light build uses one.
   const rumble = bypass.has('filters')
     ? warmth
-    : new Tone.Filter({
+    : keep(new Tone.Filter({
         frequency: 50,
         type: 'highpass',
         rolloff: bypass.has('light') ? -12 : -48,
-      }).connect(warmth);
+      })).connect(warmth);
 
-  const bus = new Tone.Volume(-4).connect(rumble);
+  const bus = keep(new Tone.Volume(-4)).connect(rumble);
 
   // Returned so the arrangement can open and close it per section. Closing
   // the filter is how this music signals a quieter passage without changing
   // a single note.
 
-  if (bypass.has('reverb') || bypass.has('light')) return { bus, send: new Tone.Gain(0), tone };
+  if (bypass.has('reverb') || bypass.has('light')) return { bus, send: keep(new Tone.Gain(0)), tone, dispose };
 
-  const reverb = new Tone.Freeverb({ roomSize: 0.72, dampening: 1600, wet: 1 }).connect(bus);
+  const reverb = keep(new Tone.Freeverb({ roomSize: 0.72, dampening: 1600, wet: 1 })).connect(bus);
 
   // Nothing below 400Hz goes to the reverb. Low frequencies smeared over a
   // long tail stop reading as notes and start reading as rumble — measured
   // as a spectral flatness of 0.67 in the keys' low band, which is most of
   // the way to noise. Keeping bass out of the reverb is standard practice
   // for exactly this reason.
-  const send = new Tone.Filter({ frequency: 400, type: 'highpass', rolloff: -12 }).connect(reverb);
+  const send = keep(new Tone.Filter({ frequency: 400, type: 'highpass', rolloff: -12 })).connect(reverb);
 
-  return { bus, send, tone };
+  return { bus, send, tone, dispose };
 }

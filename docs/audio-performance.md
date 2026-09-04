@@ -125,21 +125,44 @@ to the crackle. The likely reason is that a live `MediaStream` has no
 duration, and the five-second rule that grants full audio focus cannot be
 satisfied by something that never ends.
 
-That is three attempts — a silent sibling element, a six-second one, and
-the real mix through a stream — all reasoned from Chrome's own
-documentation, and none of them produce a media session on this device.
-The conclusion recorded here is that **background playback with the screen
-off is not currently achievable for this page from web APIs alone.** What
-reliably gets background audio on Android is an `<audio>` element with a
-real, finite, seekable resource, and a synthesiser generating sound live
-has none of those things to offer.
+The six-second element did eventually produce **lock-screen controls in
+Chrome**, so media session works. It did not restore playback, which says
+audio focus alone does not stop Android freezing the timers.
 
-The routes that remain, none of them small: encode the generated audio in
-the browser and feed it through Media Source Extensions so it looks like
-real media; ship as an installed app; or accept that this plays with the
-screen on. The user-side lever is Android's per-app battery setting,
-Optimised to Unrestricted, which is documented as the most effective fix
-for exactly this and which no web page can reach.
+### The horizon was the answer, and it was set eight times too small
+
+Declaring this unachievable was premature. Notes handed to Web Audio play
+on the **audio thread**, which keeps rendering with the screen off; only
+the *scheduling* is frozen. So the question was never whether we can stop
+Android throttling us — it is how much music each timer firing leaves
+behind before the freeze.
+
+The first attempt used a four-second horizon. If a throttled timer fires
+about once a minute that is roughly 7% of a minute with sound, and the
+phone reported 10-15%. The arithmetic matching the symptom is what
+identified the mistake.
+
+Measured, with the main thread frozen solid for ten seconds:
+
+| hidden lookahead | audible while frozen |
+|---|---|
+| a fraction of a second | 5% |
+| 30 seconds | 79-85% |
+
+`HIDDEN_LOOKAHEAD` is now 30.
+
+This has a consequence that had to be handled first: at the moment stop is
+pressed, half a minute of music is already committed to the voices at times
+that have not arrived, and `releaseAll` cannot reach a note that has not
+attacked. Measured, stop left the output at 0.24 peak for six seconds. So
+`stop()` now silences the bus, then tears the whole graph down — voices,
+sequence, analysers and the master chain, which has to go too because the
+reverb send is fed in parallel with the bus and keeps sounding after it.
+The next play rebuilds. After the fix: 0.086 in the first second as release
+tails decay, then silence.
+
+The user-side lever remains Android's per-app battery setting, Optimised to
+Unrestricted, which no web page can reach.
 
 `?stream` stays, opt-in, because it costs nothing and the platform may
 change. `?bypass=keepalive` disables the element side for comparison.

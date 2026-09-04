@@ -34,6 +34,10 @@ export class LofiEngine {
     this.stepSeq = null;
     this.analyser = null;
     this.meter = null;
+    this.master = null;
+    this.masterParts = null;
+    this.reverbSend = null;
+    this.toneFilter = null;
     this.scheduled = false;
 
     this.chords = [];
@@ -59,6 +63,7 @@ export class LofiEngine {
       }
     }
     const master = createMaster(this.bypass, output);
+    this.masterParts = master;
     this.master = master.bus;
     this.reverbSend = master.send;
     this.toneFilter = master.tone;
@@ -136,11 +141,52 @@ export class LofiEngine {
   stop() {
     if (typeof Tone === 'undefined') return;
     Tone.getTransport().stop();
+    Tone.getTransport().cancel();
+
+    // Silence first, and immediately. When the page is hidden the engine
+    // writes half a minute of music ahead of the playhead, so at the moment
+    // stop is pressed that music is already committed to the voices at times
+    // that have not arrived yet. releaseAll cannot reach a note that has not
+    // attacked, and measured, stop left the output at 0.24 peak for the six
+    // seconds after it.
+    if (this.master) this.master.volume.value = -Infinity;
     if (this.keys) this.keys.releaseAll();
     if (this.lead) this.lead.releaseAll();
     if (this.bass) this.bass.triggerRelease();
+
+    // Then tear the graph down, so the next play cannot inherit those notes.
+    // Rebuilding costs a moment on a button press and is the only thing that
+    // actually stops the sound.
+    this._teardown();
     this.bar = 0;
     this.plan = null;
+  }
+
+  _teardown() {
+    const parts = [this.stepSeq, this.keys, this.lead, this.bass, this.analyser, this.meter];
+    if (this.drumKit) parts.push(...Object.values(this.drumKit));
+    // The master chain last, so nothing is disconnected out from under a
+    // voice mid-teardown.
+    if (this.masterParts && this.masterParts.dispose) parts.push({ dispose: this.masterParts.dispose });
+    for (const part of parts) {
+      // Disposing a node twice throws, and a half-built graph can hold nulls.
+      try {
+        if (part && typeof part.dispose === 'function') part.dispose();
+      } catch (_) { /* already gone */ }
+    }
+    this.stepSeq = null;
+    this.keys = null;
+    this.lead = null;
+    this.bass = null;
+    this.drumKit = null;
+    this.analyser = null;
+    this.meter = null;
+    this.master = null;
+    this.masterParts = null;
+    this.reverbSend = null;
+    this.toneFilter = null;
+    // build() keys off this.keys, and the sequence has to be re-scheduled.
+    this.scheduled = false;
   }
 
   regenerate() {
