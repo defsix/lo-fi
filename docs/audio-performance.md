@@ -302,10 +302,44 @@ so the reverb is about 40% of it. CPU throttling does not reach the offline
 render thread, so those numbers are not a phone proxy and nothing here can
 make them one.
 
-`render-test.html` exists to get that number on the device, and to prove
-the other half at the same time: it renders thirty seconds, reports the
-ratio, and hands the result to an `<audio>` element to be played with the
-screen off.
+`render-test.html` got that number on the device, and it settles it:
+
+| browser | 30s rendered in | vs realtime |
+|---|---|---|
+| Firefox 155 | 7.02 s | **4.27x** |
+| Chrome | 14.53 s | **2.07x** |
+
+Both played cleanly, both survived the screen going off, both showed
+lock-screen controls.
+
+Firefox being the *faster* one is the reverse of live playback, where it was
+about ten times worse, and the reason matters: rendering offline never
+touches cubeb, the audio output backend its bug lives in. So this
+architecture does not merely fix screen-off playback — it routes around the
+Firefox problem as well, which is where "browser agnostic" comes from.
+
+### What was built
+
+- `js/compose.js` — the composition, separated from the transport, so live
+  and rendered paths share one answer to "what happens in bar 37". It also
+  centralises a real bug: the groove moves notes across step boundaries, so
+  a ghost can land before a snare on an adjacent step and a monophonic voice
+  rejects the second. Events are now sorted per voice in one place. And
+  times are clamped at zero, because on bar 0 the groove pulls the first
+  note to a negative time, which Web Audio rejects outright — that was
+  killing every render after the second.
+- `js/render.js` — renders N bars offline plus a 2.5 s tail, so reverb and
+  releases finish rather than being cut mid-decay.
+- `js/stream.js` — two alternating `<audio>` elements. The next chunk starts
+  as the current one's *music* ends, so the outgoing tail rings over the
+  incoming downbeat. An `<audio>` element cannot be started with sample
+  accuracy; putting the handover inside the tail is what makes that not
+  matter.
+- `stream.html` — the player.
+
+Measured over 30 s and two handovers: longest silence 100 ms, shorter than
+a musical rest. At the default 16-bar chunk, handover fires at 51.79 s
+against 51.9 s of music, with both elements sounding across the seam.
 
 ## Verdict on live screen-off playback
 

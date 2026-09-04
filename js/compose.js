@@ -1,0 +1,126 @@
+// What the music is, separated from how it reaches the speakers.
+//
+// The engine used to decide each bar inside its transport callback, which
+// meant the composition only existed while playing live. Rendering chunks
+// offline needs the same decisions with no transport at all, and two copies
+// of "what happens in bar 37" would drift apart within a week. So the
+// decisions live here, and both paths ask this module.
+//
+// A plan is what a bar contains. Events are that plan flattened into notes
+// with times, groove included. Neither touches an audio node.
+
+import { pickKey, pickProgression, buildChords } from './theory.js';
+import { compForBar, bassForBar } from './arrange.js';
+import { makeMotif, realiseMotif } from './melody.js';
+import { drumsForBar } from './drums.js';
+import { grooveOffset, accent } from './groove.js';
+import { sectionAt, isCycleStart } from './sections.js';
+
+export const BARS_PER_PHRASE = 4;
+export const STEPS_PER_BAR = 16;
+
+export function createComposition() {
+  const key = pickKey();
+  return { key, chords: buildChords(key, pickProgression()), motif: makeMotif() };
+}
+
+// New material, same place in the arrangement.
+export function renewMaterial(state) {
+  state.key = pickKey();
+  state.chords = buildChords(state.key, pickProgression());
+  state.motif = makeMotif();
+  return state;
+}
+
+// Everything a bar plays, decided once. Mutates `state` where the
+// arrangement calls for new material, so bar N+1 follows from bar N.
+export function planBar(state, bar, rng = Math.random) {
+  // A new motif every other phrase: enough repetition to feel composed,
+  // enough change that eight bars in it hasn't become wallpaper.
+  if (bar > 0 && bar % (BARS_PER_PHRASE * 2) === 0 && rng() < 0.7) {
+    state.motif = makeMotif();
+  }
+
+  // A fresh key and progression at the top of each cycle: the stream is
+  // endless, so it should not be the same eight bars endlessly.
+  let renewed = false;
+  if (isCycleStart(bar)) {
+    renewMaterial(state);
+    renewed = true;
+  }
+
+  const section = sectionAt(bar);
+  const index = bar % state.chords.length;
+  const chord = state.chords[index];
+  const nextChord = state.chords[(index + 1) % state.chords.length];
+  const barInPhrase = bar % BARS_PER_PHRASE;
+
+  return {
+    bar,
+    chord,
+    section,
+    key: state.key,
+    renewed,
+    // Thinning the comping on the second half of the phrase keeps eight
+    // bars from landing as the same bar four times.
+    comp: section.voices.keys ? compForBar(chord, barInPhrase !== 2 && section.density > 0.7, rng) : [],
+    bass: section.voices.bass ? bassForBar(chord, nextChord, rng) : [],
+    // The melody sits out sparse sections entirely, and thins in the rest.
+    melody:
+      section.voices.lead && rng() < section.density
+        ? realiseMotif(state.motif, chord, state.key, barInPhrase, rng)
+        : [],
+    drums: section.voices.drums
+      ? drumsForBar(section.isLastBar ? 3 : barInPhrase, rng)
+      : { kick: [], snare: [], ghosts: [], hats: [], fill: [] },
+  };
+}
+
+// A plan flattened into notes with times in seconds from the bar's start,
+// microtiming applied. Grouped by voice and sorted, because the groove moves
+// notes across step boundaries — a ghost sits earlier than a snare, so on
+// adjacent steps they come out of order, and a monophonic voice rejects a
+// time earlier than the last one it was given.
+export function eventsForBar(plan, secondsPerBar, rng = Math.random) {
+  const stepDur = secondsPerBar / STEPS_PER_BAR;
+  // Never before the start of the bar. The groove pulls some voices earlier
+  // than their step, and on step 0 of the very first bar that lands at a
+  // negative time, which Web Audio rejects outright.
+  const at = (step, voice) => Math.max(0, step * stepDur + grooveOffset(step, voice));
+  const out = { kick: [], click: [], snare: [], hat: [], keys: [], bass: [], lead: [] };
+  const { comp, bass, melody, drums } = plan;
+
+  for (const step of drums.kick) {
+    const velocity = 0.85 + rng() * 0.12;
+    out.kick.push({ note: 'A1', duration: '8n', time: at(step, 'kick'), velocity });
+    out.click.push({ duration: '32n', time: at(step, 'kick'), velocity: velocity * 0.6 });
+  }
+  for (const step of [...drums.snare, ...drums.fill]) {
+    out.snare.push({ duration: '16n', time: at(step, 'snare'), velocity: 0.62 + rng() * 0.14 });
+  }
+  for (const step of drums.ghosts) {
+    // A ghost and a backbeat on the same step would put two notes on one
+    // voice out of order, since the ghost sits earlier in the groove.
+    if (drums.snare.includes(step) || drums.fill.includes(step)) continue;
+    out.snare.push({ duration: '32n', time: at(step, 'ghost'), velocity: 0.12 + rng() * 0.08 });
+  }
+  for (const step of drums.hats) {
+    out.hat.push({ duration: '32n', time: at(step, 'hat'), velocity: accent(step) * (0.5 + rng() * 0.16) });
+  }
+
+  for (const hit of comp) {
+    // Rolled rather than struck as a block.
+    hit.notes.forEach((note, i) => {
+      out.keys.push({ note, duration: hit.duration, time: at(hit.step, 'keys') + i * hit.roll, velocity: hit.velocity });
+    });
+  }
+  for (const hit of bass) {
+    out.bass.push({ note: hit.note, duration: hit.duration, time: at(hit.step, 'bass'), velocity: hit.velocity });
+  }
+  for (const note of melody) {
+    out.lead.push({ note: note.note, duration: note.duration, time: at(note.step, 'lead'), velocity: note.velocity });
+  }
+
+  for (const voice of Object.keys(out)) out[voice].sort((a, b) => a.time - b.time);
+  return out;
+}

@@ -21,6 +21,7 @@ const MODULES = [
   'js/arrange.js',
   'js/sections.js',
   'js/background.js',
+  'js/compose.js',
   'js/master.js',
   'js/capture.js',
   'js/instruments.js',
@@ -29,12 +30,17 @@ const MODULES = [
 ];
 const PAGE = 'js/page.js';
 
-// Every module under js/ is engine code and must be listed above, or the
-// bundle fails at runtime with a missing function.
+// Modules belonging to stream.html rather than index.html. They are not
+// dead code, they are another page's code, and bundling them into this one
+// would ship a renderer to a page that plays live.
+const OTHER_PAGES = ['js/render.js', 'js/stream.js'];
+
+// Every other module under js/ is engine code and must be listed above, or
+// the bundle fails at runtime with a missing function.
 const missing = readdirSync(resolve(root, 'js'))
   .filter((f) => f.endsWith('.js'))
   .map((f) => `js/${f}`)
-  .filter((f) => f !== PAGE && !MODULES.includes(f));
+  .filter((f) => f !== PAGE && !MODULES.includes(f) && !OTHER_PAGES.includes(f));
 
 if (missing.length) throw new Error(`these engine modules are not in the bundle: ${missing.join(', ')}`);
 
