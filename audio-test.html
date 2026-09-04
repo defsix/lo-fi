@@ -72,6 +72,20 @@
   </div>
 
   <div class="test">
+    <span class="label">4 &middot; a new node per note</span>
+    <span class="what">Four notes a second, each one a brand new oscillator that is started and then stopped &mdash; which is exactly how a synth voice works, and what the lo-fi engine does ~26 times a bar.</span>
+    <button id="b4">play repeated notes</button>
+    <span class="note">Crackles here &rarr; the fault is the cost or handling of starting and stopping nodes, not the sound itself.</span>
+  </div>
+
+  <div class="test">
+    <span class="label">5 &middot; same notes, no new nodes</span>
+    <span class="what">Identical rhythm and pitches, but one permanent oscillator whose volume is faded up and down. Same music, no node churn.</span>
+    <button id="b5">play gated notes</button>
+    <span class="note">Clean here while 4 crackles &rarr; that is the answer, and it is fixable: the engine can hold a pool of permanent voices instead of building one per note.</span>
+  </div>
+
+  <div class="test">
     <span class="label">context</span>
     <span class="what" id="info">press a test to read the audio context</span>
   </div>
@@ -151,6 +165,84 @@
       b2.dataset.on = 'false';
       b2.textContent = 'play oscillator';
     }
+    report();
+  });
+
+  // --- 4 and 5: the same four notes a second, once with a new node per note
+  // and once with a single permanent one. Everything else is identical, so a
+  // difference between them isolates node churn as the cause.
+  const NOTES = [220, 261.63, 293.66, 329.63];
+  const EVERY = 250;
+  const ATTACK = 0.01;
+  const RELEASE = 0.12;
+
+  let churnTimer = null;
+  const b4 = document.getElementById('b4');
+  b4.addEventListener('click', async () => {
+    const c = context();
+    await c.resume();
+    if (churnTimer) {
+      clearInterval(churnTimer);
+      churnTimer = null;
+      b4.dataset.on = 'false';
+      b4.textContent = 'play repeated notes';
+      return;
+    }
+    let i = 0;
+    churnTimer = setInterval(() => {
+      const at = c.currentTime + 0.05;
+      const osc = c.createOscillator();
+      const g = c.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = NOTES[i++ % NOTES.length];
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(0.2, at + ATTACK);
+      g.gain.linearRampToValueAtTime(0, at + 0.2);
+      osc.connect(g).connect(c.destination);
+      osc.start(at);
+      osc.stop(at + 0.2 + RELEASE);
+      osc.onended = () => { osc.disconnect(); g.disconnect(); };
+    }, EVERY);
+    b4.dataset.on = 'true';
+    b4.textContent = 'stop repeated notes';
+    report();
+  });
+
+  let gatedTimer = null;
+  let gatedNodes = null;
+  const b5 = document.getElementById('b5');
+  b5.addEventListener('click', async () => {
+    const c = context();
+    await c.resume();
+    if (gatedTimer) {
+      clearInterval(gatedTimer);
+      gatedTimer = null;
+      gatedNodes.osc.stop();
+      gatedNodes.osc.disconnect();
+      gatedNodes.g.disconnect();
+      gatedNodes = null;
+      b5.dataset.on = 'false';
+      b5.textContent = 'play gated notes';
+      return;
+    }
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = 'triangle';
+    g.gain.value = 0;
+    osc.connect(g).connect(c.destination);
+    osc.start();
+    gatedNodes = { osc, g };
+    let i = 0;
+    gatedTimer = setInterval(() => {
+      const at = c.currentTime + 0.05;
+      osc.frequency.setValueAtTime(NOTES[i++ % NOTES.length], at);
+      g.gain.cancelScheduledValues(at);
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(0.2, at + ATTACK);
+      g.gain.linearRampToValueAtTime(0, at + 0.2);
+    }, EVERY);
+    b5.dataset.on = 'true';
+    b5.textContent = 'stop gated notes';
     report();
   });
 
