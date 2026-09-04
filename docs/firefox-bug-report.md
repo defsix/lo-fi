@@ -84,7 +84,13 @@ each tested rather than assumed:
   no filters, no limiter, no gain staging — still crackles.
 - **The cost of the graph.** A reduced build using single-oscillator voices,
   no effects, and one biquad on the master still crackles, despite cutting
-  late-scheduled notes sevenfold under an 8× CPU throttle.
+  late-scheduled notes sevenfold under an 8× CPU throttle. To be clear about
+  the limits of this one: the page does have a genuine capacity problem, and
+  it is being fixed separately — under CPU throttling the engine schedules a
+  few percent of its notes late, concentrated in the bar where the drums
+  enter. That is visible in Chrome too. It is listed here because the
+  reduced build stays *below* that ceiling and still crackles in Firefox
+  while being clean in Chrome, which is the part this report is about.
 - **Buffer size.** This looked like the obvious cause and the data refutes
   it: output latency across the three devices spans a factor of ten and runs
   the wrong way, with the *cleanest* device reporting the *least* buffering
