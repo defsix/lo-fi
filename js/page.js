@@ -204,4 +204,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 window.addEventListener('resize', sizeCanvas);
 sizeCanvas();
 setPlayingUI(false);
-requestAnimationFrame(drawScope);
+
+// ?bypass=visual stops the canvas entirely. It polls an analyser every frame
+// on the same thread that schedules the notes.
+if (!params.get('bypass')?.includes('visual')) requestAnimationFrame(drawScope);

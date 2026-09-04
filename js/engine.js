@@ -198,30 +198,31 @@ export class LofiEngine {
     if (!this.plan) return;
 
     const { chord, comp, bass, melody, drums } = this.plan;
+    const off = this.bypass;
 
     // --- drums
-    if (drums.kick.includes(step)) {
+    if (!off.has('drums') && drums.kick.includes(step)) {
       const at = time + grooveOffset(step, 'kick');
       const velocity = 0.85 + Math.random() * 0.12;
       this.drumKit.kick.triggerAttackRelease('A1', '8n', at, velocity);
       this.drumKit.click.triggerAttackRelease('32n', at, velocity * 0.6);
     }
-    if (drums.snare.includes(step) || drums.fill.includes(step)) {
+    if (!off.has('drums') && (drums.snare.includes(step) || drums.fill.includes(step))) {
       this.drumKit.snare.triggerAttackRelease('16n', time + grooveOffset(step, 'snare'), 0.62 + Math.random() * 0.14);
     }
     // A ghost and a backbeat hit on the same step would schedule two notes
     // on one voice out of order, since the ghost sits earlier in the groove
     // than the snare — Tone rejects the second as going back in time.
     const struck = drums.snare.includes(step) || drums.fill.includes(step);
-    if (!struck && drums.ghosts.includes(step)) {
+    if (!off.has('drums') && !struck && drums.ghosts.includes(step)) {
       this.drumKit.snare.triggerAttackRelease('32n', time + grooveOffset(step, 'ghost'), 0.12 + Math.random() * 0.08);
     }
-    if (drums.hats.includes(step)) {
+    if (!off.has('drums') && drums.hats.includes(step)) {
       this.drumKit.hat.triggerAttackRelease('32n', time + grooveOffset(step, 'hat'), accent(step) * (0.5 + Math.random() * 0.16));
     }
 
     // --- chords, rolled rather than struck as a block
-    for (const hit of comp) {
+    for (const hit of off.has('keys') ? [] : comp) {
       if (hit.step !== step) continue;
       const at = time + grooveOffset(step, 'keys');
       hit.notes.forEach((note, i) => {
@@ -230,13 +231,13 @@ export class LofiEngine {
     }
 
     // --- bass
-    for (const hit of bass) {
+    for (const hit of off.has('bass') ? [] : bass) {
       if (hit.step !== step) continue;
       this.bass.triggerAttackRelease(hit.note, hit.duration, time + grooveOffset(step, 'bass'), hit.velocity);
     }
 
     // --- melody
-    for (const note of melody) {
+    for (const note of off.has('lead') ? [] : melody) {
       if (note.step !== step) continue;
       this.lead.triggerAttackRelease(note.note, note.duration, time + grooveOffset(step, 'lead'), note.velocity);
     }
