@@ -22,7 +22,11 @@ Each of these was tested, not assumed.
   destination. Still crackles.
 - **Not the cost of the graph.** `?light` uses single-oscillator voices with
   no effects and cuts late notes sevenfold under an 8x CPU throttle. Still
-  crackles.
+  crackles. The engine *did* have a real capacity problem underneath this —
+  voice churn and an undersized output buffer, both fixed, see
+  `audio-performance.md` — and fixing it made Chrome on the Pixel clean
+  while leaving Firefox on the same device exactly as bad. That is the
+  cleanest version of this comparison we have.
 - **Not Web Audio on the device.** A library-free test page
   (`audio-test.html`) plays a `<audio>` element, a bare oscillator, a small
   graph, a new node per note, and a permanently gated note — all clean.

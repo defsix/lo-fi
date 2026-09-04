@@ -108,16 +108,18 @@ the comparable move would be rendering its own voices to buffers once at
 startup and playing those back — still nothing sampled from anyone, but
 buffer reads instead of live FM. Not done, and a large change.
 
-## Still open
+## Outcome
 
-Whether any of this fixes the Pixel. Headless Chromium has no audio device,
-so main-thread pressure is measurable here and a genuine audio-thread
-underrun is not. Thermal throttling on a phone also fits "fine, then bad at
-30-40 seconds" and cannot be told apart from density on this hardware.
+Confirmed on the device: **Chrome on the Pixel 10 Pro is clean.** Both
+fixes together did it, so density was the mechanism rather than thermal
+throttling, and the listening test that would have separated them was not
+needed.
 
-The listening test that separates them costs nothing: the breakdown at
-about 1:45 drops the drums for eight bars. If the crackle stops there and
-returns at the lift, it is density. If it continues through, it is not.
+Firefox 155 on the same device still crackles on the same build. That is
+the separate backend problem recorded in `firefox-android-audio.md`, and
+this result sharpens it: the page's own capacity problem is gone and Chrome
+proves the graph renders in time on that hardware, so the browser is now
+the only variable left.
 
 [1]: https://github.com/Tonejs/Tone.js/issues/604
 [2]: https://github.com/Tonejs/Tone.js/issues/188
