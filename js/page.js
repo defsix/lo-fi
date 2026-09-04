@@ -1,6 +1,7 @@
 import { LofiEngine } from './engine.js';
 import { chordLabel, romanLabel } from './theory.js';
 import { capture } from './capture.js';
+import { createBackgroundKeepAlive } from './background.js';
 
 // ---- visualiser ---------------------------------------------------------
 const params = new URLSearchParams(location.search);
@@ -106,10 +107,19 @@ engine.onChordChange = (chord) => {
 // has to follow it rather than being set once at the start.
 engine.onMixChange = () => showMix();
 
+// Screen-off on Android suspends us unless the platform thinks we are a
+// media player. See background.js.
+const keepAlive = createBackgroundKeepAlive({
+  onPlay: () => { if (!engine.isPlaying) play(); },
+  onStop: () => { if (engine.isPlaying) stop(); },
+  bypass: new Set((params.get('bypass') || '').split(',').filter(Boolean)),
+});
+
 async function play() {
   playBtn.disabled = true;
   try {
     await engine.start();
+    keepAlive.start();
     engine.setVolume(Number(volumeInput.value));
     showMix();
     setStatus('generating - chords, bass and drums written live in your browser');
@@ -123,6 +133,7 @@ async function play() {
 
 function stop() {
   engine.stop();
+  keepAlive.stop();
   setPlayingUI(false);
   setStatus('stopped');
 }

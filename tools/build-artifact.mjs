@@ -20,6 +20,7 @@ const MODULES = [
   'js/melody.js',
   'js/arrange.js',
   'js/sections.js',
+  'js/background.js',
   'js/master.js',
   'js/capture.js',
   'js/instruments.js',

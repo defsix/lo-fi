@@ -90,6 +90,34 @@ while buffer size protects the audio thread. Web Audio's own implementers
 are explicit that a larger render quantum is what lets a bigger graph
 render in time.
 
+## The screen going off is a different fault
+
+Reported separately and worth not conflating with the crackle: on the Pixel
+the track stutters mildly when it reaches the main section, and then, when
+the screen sleeps, collapses into barely any playback at all.
+
+The second one is not capacity. Tone schedules notes from a timer and hands
+them to Web Audio a fraction of a second before they sound; audio already
+scheduled keeps rendering, anything not yet scheduled never arrives. When
+Android stops servicing our timers the engine goes quiet within one
+lookahead window, which is exactly the reported symptom.
+
+`js/background.js` does the two things a page can do about it: look 4
+seconds ahead instead of 0.3 while hidden, so a throttled timer still
+leaves continuous music behind it, and play a silent looping element so the
+platform classes us as media playback rather than a page that merely holds
+an AudioContext — which also brings the lock-screen controls. Disable the
+element with `?bypass=keepalive` to compare.
+
+Firefox fixed background-tab `setTimeout` throttling for pages with an
+AudioContext in Firefox 50 ([bug 1181073][7]), but that is desktop tab
+throttling; screen-off on Android is the platform suspending the process,
+which is a different mechanism.
+
+The thing no page can reach is the browser's own Android battery setting.
+Per-app "Optimised" versus "Unrestricted" is widely reported as the single
+most effective fix, and it belongs to whoever holds the phone.
+
 ## Prior art
 
 Worth knowing that none of this is novel. Tone.js carries repeat reports of
@@ -133,3 +161,4 @@ that could not see what it was asked about.
 [4]: https://github.com/WebAudio/web-audio-api/issues/2632
 [5]: https://padenot.github.io/web-audio-perf/
 [6]: https://github.com/generativefm/generative.fm
+[7]: https://bugzilla.mozilla.org/show_bug.cgi?id=1181073
