@@ -153,6 +153,40 @@ The thing no page can reach is the browser's own Android battery setting.
 Per-app "Optimised" versus "Unrestricted" is widely reported as the single
 most effective fix, and it belongs to whoever holds the phone.
 
+## Where it actually is: not the synthesis
+
+The plan after all the above was to render the voices to buffers, on the
+strength of every measurement pointing at the keys — bypassing them took
+late notes to zero, and an FM voice is two oscillators and two envelopes
+against one interpolated read for a buffer.
+
+One test on the device stopped that: **`?light` crackles the same as the
+full build.** Single-oscillator voices, no reverb, chorus, tremolo or
+delay, and it fails identically. Meanwhile `audio-test.html`, which is
+library-free, runs 24 simultaneous oscillators and an automation storm on
+the same device without artifacts.
+
+So the cost of *synthesis* is not the driver, and a buffer rewrite would
+have been a day spent on the wrong thing. What separates the clean
+library-free page from the crackling engine is not oscillator count. It is
+everything else in between: Tone's scheduling layer and the
+standardized-audio-context shim it wraps every node in, per-note envelope
+automation, the analysers, and a canvas redrawing at 2.3x device pixel
+ratio.
+
+That is the live suspect list, and it is a different investigation from the
+one that produced the fixes above. Those fixes stand on their own
+measurements — the voice churn and the undersized buffer were both real —
+they were simply not the whole of it.
+
+## What did work: media session
+
+The five-second rule was the blocker. With a six-second silent element,
+**lock-screen controls appear in Chrome.** Playback with the screen off is
+still degraded, so audio focus by itself does not stop Android throttling
+the timers that schedule notes, but the media session half is now working
+and the controls are wired to play and stop.
+
 ## Prior art
 
 Worth knowing that none of this is novel. Tone.js carries repeat reports of
