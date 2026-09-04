@@ -32,8 +32,8 @@ evidence belongs in Bugzilla.
 
 ## Summary
 
-Web Audio output crackles continuously on some Android devices in Firefox
-155, while identical content is clean in Chrome on the same device and clean
+Web Audio output crackles on some Android devices in Firefox 155 far more
+severely than Chrome on the same device with the same content, and is clean
 in Firefox on another Android device
 
 ## Steps to reproduce
@@ -48,17 +48,19 @@ context's sample rate and latencies.
 
 ## Actual result
 
-Continuous crackling and popping throughout playback.
+Continuous crackling and popping throughout playback, and markedly worse
+than Chrome on the same device — by roughly a factor of ten, judged by ear.
 
 ## Expected result
 
-Clean playback, as in Chrome on the same device, and as in Firefox on the
-Xperia below.
+Playback no worse than Chrome on the same device, and clean as in Firefox
+on the Xperia below.
 
-Worth stating plainly, because it is the strongest single fact here: the
-page's own performance problems were found and fixed, and Chrome on the
-device that fails is now clean. Same device, same page, same build — only
-the browser differs.
+Note on scope, stated up front rather than discovered later: this page had
+its own performance problems, they were found and fixed, and both browsers
+improved. Chrome is not fully clean either. What separates them is
+magnitude — on the same device, same page, same build, Firefox is roughly
+ten times worse than Chrome by the reporter's ear.
 
 ## Device comparison
 
@@ -87,16 +89,18 @@ each tested rather than assumed:
   the limiter together changes nothing.
 - **The entire master chain.** Routing the bus straight to the destination —
   no filters, no limiter, no gain staging — still crackles.
-- **The cost of the graph — and this one was real, was found, and is
-  fixed.** The page did have a genuine capacity problem: it was rebuilding
-  synth voices on the main thread while playing, and it was asking for the
-  browser's smallest output buffer. Both are fixed (a fixed voice pool, and
-  `latencyHint: 'playback'`), which cut main-thread blocking from 125 to
-  91 ms per second and took the output buffer from 441 to 1024 samples.
-  **Chrome on the affected Pixel 10 Pro is now clean.** Firefox 155 on the
-  same device, same page, same build still crackles. A reduced build
-  (`?light`: single-oscillator voices, no effects, one biquad on the master)
-  also still crackles in Firefox while being clean in Chrome.
+- **The cost of the graph — partly, and honestly not entirely.** The page
+  did have a real capacity problem: it rebuilt synth voices on the main
+  thread while playing, and asked for the browser's smallest output buffer.
+  Both are fixed (a fixed voice pool, and `latencyHint: 'playback'`),
+  cutting main-thread blocking from 125 to 91 ms per second and taking the
+  output buffer from 441 to 1024 samples. Both browsers improved and
+  **neither is fully clean**, so graph cost is not excluded as a
+  contributing factor and work on it continues. What is not explained by
+  cost alone is the gap: on identical hardware and build, Firefox is about
+  ten times worse than Chrome, and a reduced build (`?light`:
+  single-oscillator voices, no effects, one biquad on the master) does not
+  close it.
 - **Buffer size.** This looked like the obvious cause and the data refutes
   it: output latency across the three devices spans a factor of ten and runs
   the wrong way, with the *cleanest* device reporting the *least* buffering

@@ -24,9 +24,11 @@ Each of these was tested, not assumed.
   no effects and cuts late notes sevenfold under an 8x CPU throttle. Still
   crackles. The engine *did* have a real capacity problem underneath this —
   voice churn and an undersized output buffer, both fixed, see
-  `audio-performance.md` — and fixing it made Chrome on the Pixel clean
-  while leaving Firefox on the same device exactly as bad. That is the
-  cleanest version of this comparison we have.
+  `audio-performance.md`. Fixing it improved both browsers and cured
+  neither, so graph cost is a contributor here rather than an excluded
+  factor. What survives is the gap: on the same device and build Firefox is
+  about ten times worse than Chrome, and the reduced build does not close
+  it.
 - **Not Web Audio on the device.** A library-free test page
   (`audio-test.html`) plays a `<audio>` element, a bare oscillator, a small
   graph, a new node per note, and a permanently gated note — all clean.

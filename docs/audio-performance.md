@@ -108,18 +108,24 @@ the comparable move would be rendering its own voices to buffers once at
 startup and playing those back — still nothing sampled from anyone, but
 buffer reads instead of live FM. Not done, and a large change.
 
-## Outcome
+## Outcome so far
 
-Confirmed on the device: **Chrome on the Pixel 10 Pro is clean.** Both
-fixes together did it, so density was the mechanism rather than thermal
-throttling, and the listening test that would have separated them was not
-needed.
+Both browsers improved on the Pixel 10 Pro. **Neither is fixed.** Firefox
+remains roughly ten times worse than Chrome by ear, on the same device and
+build.
 
-Firefox 155 on the same device still crackles on the same build. That is
-the separate backend problem recorded in `firefox-android-audio.md`, and
-this result sharpens it: the page's own capacity problem is gone and Chrome
-proves the graph renders in time on that hardware, so the browser is now
-the only variable left.
+So the capacity problem is reduced, not solved, and these two fixes were
+not the whole of it. What they do establish is that voice churn and buffer
+size were both real contributors, and that the remaining cost is worth
+attacking: the prior art points at rendering voices to buffers once at
+startup and playing those back, which is the difference between a buffer
+read and live FM per note.
+
+An earlier version of this file claimed Chrome was clean. That was written
+from a first listening impression and was wrong; longer listening found
+Chrome still fails, just far less. Recorded because the same mistake had
+already been made once in this investigation, by trusting a measurement
+that could not see what it was asked about.
 
 [1]: https://github.com/Tonejs/Tone.js/issues/604
 [2]: https://github.com/Tonejs/Tone.js/issues/188
