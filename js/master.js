@@ -40,9 +40,15 @@ export function createMaster(bypass = new Set()) {
     return { bus: bare, send: new Tone.Gain(0) };
   }
 
-  const warmth = bypass.has('filters')
+  const filtersOff = bypass.has('filters');
+  const warmth = filtersOff
     ? limiter
     : new Tone.Filter({ frequency: 9500, type: 'lowpass', rolloff: -12 }).connect(limiter);
+
+  // The arrangement rides this filter's cutoff, so it is only handed back
+  // when it really is a filter: with filters bypassed `warmth` is the
+  // limiter, which has no frequency to ramp.
+  const tone = filtersOff ? null : warmth;
 
   // A steep filter fed near-silence drives its state toward denormalised
   // floats. Chrome flushes those to zero on the audio thread; Firefox has
@@ -60,7 +66,11 @@ export function createMaster(bypass = new Set()) {
 
   const bus = new Tone.Volume(-4).connect(rumble);
 
-  if (bypass.has('reverb') || bypass.has('light')) return { bus, send: new Tone.Gain(0) };
+  // Returned so the arrangement can open and close it per section. Closing
+  // the filter is how this music signals a quieter passage without changing
+  // a single note.
+
+  if (bypass.has('reverb') || bypass.has('light')) return { bus, send: new Tone.Gain(0), tone };
 
   const reverb = new Tone.Freeverb({ roomSize: 0.72, dampening: 1600, wet: 1 }).connect(bus);
 
@@ -71,5 +81,5 @@ export function createMaster(bypass = new Set()) {
   // for exactly this reason.
   const send = new Tone.Filter({ frequency: 400, type: 'highpass', rolloff: -12 }).connect(reverb);
 
-  return { bus, send };
+  return { bus, send, tone };
 }

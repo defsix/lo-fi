@@ -156,8 +156,29 @@ fresh — filter automation, dropouts, drum variations, hi-hat changes." The
 genre thrives on repetition, so the evolution should be subtle: no drops,
 no dramatic bridge.
 
-**Not yet implemented.** The engine currently plays one texture forever.
-This is the largest remaining gap.
+**Implemented** in `js/sections.js`. Six sections, gating which voices play,
+how busy each is, and where the master low-pass sits:
+
+| section | bars | voices | density | tone |
+|---|---|---|---|---|
+| intro | 8 | keys, bass | 0.6 | 0.45 |
+| groove | 8 | keys, bass, drums | 0.8 | 0.8 |
+| main | 16 | all | 1 | 1 |
+| breakdown | 8 | keys, bass, lead | 0.5 | 0.4 |
+| lift | 16 | all | 1 | 1 |
+| drift | 8 | all | 0.65 | 0.7 |
+
+`tone` maps to the master filter cutoff as `1400 + tone * 8100` Hz, ramped
+over 2.4 s so a section change reads as a change of light rather than a
+switch being thrown. Every boundary lands on a multiple of four bars, so
+sections turn over in step with the progression, and the last bar of each
+section gets the phrase-ending drum fill.
+
+The intro plays once. After it, the cycle is the remaining five sections —
+56 bars, about 3 minutes at 74 bpm — because a stream that restarts from
+silence every three minutes sounds broken rather than composed. A fresh key
+and progression arrive at each cycle boundary, where the music has just
+thinned out anyway.
 
 ---
 
@@ -239,7 +260,7 @@ Everything above 1 kHz being empty is a defect, not a style.
 | Wow and flutter | not started |
 | Sidechain pump | not started |
 | Saturation | not started |
-| Sectional arrangement | not started — largest gap |
+| Sectional arrangement | done — `js/sections.js` |
 
 ---
 

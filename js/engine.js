@@ -5,6 +5,7 @@ import { createDrumKit, drumsForBar } from './drums.js';
 import { compForBar, bassForBar } from './arrange.js';
 import { makeMotif, realiseMotif } from './melody.js';
 import { STEPS_PER_BAR, grooveOffset, accent } from './groove.js';
+import { sectionAt, isCycleStart } from './sections.js';
 
 const BPM = 74;
 const FFT_SIZE = 128;
@@ -46,6 +47,7 @@ export class LofiEngine {
     const master = createMaster(this.bypass);
     this.master = master.bus;
     this.reverbSend = master.send;
+    this.toneFilter = master.tone;
     const light = this.bypass.has('light');
     this.keys = light ? createLightKeys(this.master) : createKeys(this.master, this.reverbSend, this.bypass);
     this.lead = light ? createLightLead(this.master) : createLead(this.master, this.reverbSend, this.bypass);
@@ -128,6 +130,16 @@ export class LofiEngine {
     return this.chords;
   }
 
+  // New material, same place in the arrangement — used at a cycle boundary,
+  // where resetting the bar counter would restart the intro instead.
+  regenerateKeepingPosition() {
+    this.key = pickKey();
+    this.chords = buildChords(this.key, pickProgression());
+    this.motif = makeMotif();
+    if (this.onMixChange) this.onMixChange();
+    return this.chords;
+  }
+
   setVolume(percent) {
     if (!this.master) return;
     // A squared taper, so the slider tracks perceived loudness rather than
@@ -171,19 +183,40 @@ export class LofiEngine {
       this.motif = makeMotif();
     }
 
+    // A fresh key and progression at the top of each cycle: the stream is
+    // endless, so it should not be the same eight bars endlessly.
+    if (isCycleStart(this.bar)) this.regenerateKeepingPosition();
+
+    const section = sectionAt(this.bar);
+    this.section = section;
+
     const index = this.bar % this.chords.length;
     const chord = this.chords[index];
     const nextChord = this.chords[(index + 1) % this.chords.length];
     const barInPhrase = this.bar % BARS_PER_PHRASE;
 
+    // Open or close the master filter to match the section. Ramped over most
+    // of a bar so it is a change of light rather than a switch being thrown.
+    if (this.toneFilter) {
+      const cutoff = 1400 + section.tone * 8100;
+      this.toneFilter.frequency.rampTo(cutoff, 2.4, time);
+    }
+
     this.plan = {
       chord,
+      section,
       // Thinning the comping on the second half of the phrase keeps eight
       // bars from landing as the same bar four times.
-      comp: compForBar(chord, barInPhrase !== 2, Math.random),
-      bass: bassForBar(chord, nextChord, Math.random),
-      melody: realiseMotif(this.motif, chord, this.key, barInPhrase, Math.random),
-      drums: drumsForBar(barInPhrase, Math.random),
+      comp: section.voices.keys ? compForBar(chord, barInPhrase !== 2 && section.density > 0.7, Math.random) : [],
+      bass: section.voices.bass ? bassForBar(chord, nextChord, Math.random) : [],
+      // The melody sits out sparse sections entirely, and thins in the rest.
+      melody:
+        section.voices.lead && Math.random() < section.density
+          ? realiseMotif(this.motif, chord, this.key, barInPhrase, Math.random)
+          : [],
+      drums: section.voices.drums
+        ? drumsForBar(section.isLastBar ? 3 : barInPhrase, Math.random)
+        : { kick: [], snare: [], ghosts: [], hats: [], fill: [] },
     };
 
     if (this.onChordChange) {

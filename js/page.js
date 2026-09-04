@@ -74,7 +74,7 @@ const statusEl = document.getElementById('status');
 const keyEl = document.getElementById('key');
 const progressionEl = document.getElementById('progression');
 const chordEl = document.getElementById('chord');
-const outputEl = document.getElementById('output');
+const sectionEl = document.getElementById('section');
 
 const PLAY_PATH = '<path d="M8 5v14l12-7z" fill="currentColor"></path>';
 const PAUSE_PATH = '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"></rect><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"></rect>';
@@ -99,7 +99,12 @@ function showMix() {
 
 engine.onChordChange = (chord) => {
   chordEl.textContent = chordLabel(chord);
+  if (engine.section) sectionEl.textContent = engine.section.name;
 };
+
+// The arrangement takes a new key at the top of each cycle, so the readout
+// has to follow it rather than being set once at the start.
+engine.onMixChange = () => showMix();
 
 async function play() {
   playBtn.disabled = true;
@@ -140,7 +145,7 @@ let silentTicks = 0;
 
 setInterval(() => {
   if (!engine.isPlaying) {
-    outputEl.textContent = '-';
+    sectionEl.textContent = '-';
     silentTicks = 0;
     return;
   }
@@ -156,13 +161,9 @@ setInterval(() => {
     setStatus(`${c.sampleRate}Hz · output latency ${ms(c.outputLatency)} · base ${ms(c.baseLatency)} · requested ${engine.latencyHint === null ? 'browser default' : engine.latencyHint}`);
   }
 
-  if (level === null) {
-    outputEl.textContent = 'meter off';
-    return;
-  }
+  if (level === null) return;
 
-  const db = level > 0.0001 ? Math.round(20 * Math.log10(level)) : -Infinity;
-  outputEl.textContent = (db === -Infinity ? 'silent' : db + ' dB') + (state === 'running' ? '' : ' / ' + state);
+  if (engine.section) sectionEl.textContent = engine.section.name;
 
   if (state !== 'running') {
     setStatus('the browser suspended audio (' + state + ') - press play to resume', 'error');
