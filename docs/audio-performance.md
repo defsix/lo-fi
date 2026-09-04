@@ -149,7 +149,24 @@ Measured, with the main thread frozen solid for ten seconds:
 | a fraction of a second | 5% |
 | 30 seconds | 79-85% |
 
-`HIDDEN_LOOKAHEAD` is now 30.
+**And on the actual phone, thirty seconds was worse than useless: the music
+stopped dead the instant the screen went off, where four seconds had at
+least limped along at 10-15%.** So the horizon is back to four, with
+`?horizon=` exposing the dial.
+
+The reason is almost certainly that the horizon is not free to reach.
+Widening it makes the engine write every note between here and there in one
+synchronous burst — hundreds of them — on a main thread that is about to be
+throttled, and asks a twelve-voice pool to hold half a minute of
+overlapping notes at once. A desktop absorbs that burst. A phone is broken
+by it. The headless measurement could not see this for the same reason it
+could not see the visualiser: the cost being measured did not exist on the
+hardware doing the measuring.
+
+That is the third time in this investigation that a result from the
+throttled harness inverted on real hardware. The harness is useful for
+mechanism and useless for magnitude, and nothing from it should be believed
+about a phone until a phone has said so.
 
 This has a consequence that had to be handled first: at the moment stop is
 pressed, half a minute of music is already committed to the voices at times
@@ -256,6 +273,20 @@ than oscillators. This engine is committed to synthesising everything, so
 the comparable move would be rendering its own voices to buffers once at
 startup and playing those back — still nothing sampled from anyone, but
 buffer reads instead of live FM. Not done, and a large change.
+
+## Verdict on screen-off playback
+
+Not achievable here. Four approaches, each reasoned from documentation or
+measurement: a silent sibling element, a six-second one, the real mix
+through a MediaStream, and a thirty-second scheduling horizon. The media
+session half works — lock-screen controls appear in Chrome — and playback
+does not. The last attempt made it worse than doing nothing.
+
+What reliably gets background audio on Android is an `<audio>` element with
+a finite, seekable resource, and a synthesiser generating sound live has
+none to offer. The remaining routes are large: encode in the browser and
+feed Media Source Extensions, or ship as an installed app. The user-side
+lever is Android's per-app battery setting, which no page can reach.
 
 ## Outcome so far
 

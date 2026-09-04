@@ -42,11 +42,23 @@
 // the scheduling that Android freezes. So the horizon is how long the music
 // survives without a single timer firing.
 //
-// Measured, with the main thread frozen solid for ten seconds: at a
-// fraction of a second's horizon, 5% of that stretch had sound. At thirty
-// seconds, 79%. The first of those matches what a phone actually did with a
-// four-second horizon, which is how this number was found to be wrong.
-const HIDDEN_LOOKAHEAD = 30;
+// Measured in a headless browser with the main thread frozen for ten
+// seconds: 5% of that stretch had sound at a fraction of a second's
+// horizon, 79% at thirty. On an actual Pixel, thirty seconds was worse than
+// useless — the music stopped dead the moment the screen went off, where
+// four seconds had at least limped along at 10-15%.
+//
+// The likely reason is that the horizon is not free to reach. Widening it
+// makes the engine write every note between here and there in one
+// synchronous burst — hundreds of them — on a main thread that is about to
+// be throttled, and asks a twelve-voice pool to hold half a minute of
+// overlapping notes at once. On a desktop that burst is absorbed. On a
+// phone it is the thing that breaks.
+//
+// So this is back to a value known not to make things worse. ?horizon= sets
+// it, for anyone who wants to find where their own device gives out; the
+// measurements above say the ceiling is real, not where it is.
+const DEFAULT_HIDDEN_LOOKAHEAD = 4;
 
 // A few milliseconds of silence, looped. Built here rather than shipped as
 // a base64 blob so it is readable: a 44-byte WAV header over zeroed samples.
@@ -75,7 +87,8 @@ function silentWavUrl(seconds = 6, rate = 8000) {
   return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
 }
 
-export function createBackgroundKeepAlive({ onPlay, onStop, bypass = new Set() } = {}) {
+export function createBackgroundKeepAlive({ onPlay, onStop, bypass = new Set(), hiddenLookAhead } = {}) {
+  const horizon = Number(hiddenLookAhead) > 0 ? Number(hiddenLookAhead) : DEFAULT_HIDDEN_LOOKAHEAD;
   const disabled = bypass.has('keepalive');
   let element = null;
   let restoreLookAhead = null;
@@ -87,7 +100,7 @@ export function createBackgroundKeepAlive({ onPlay, onStop, bypass = new Set() }
     const context = Tone.getContext();
     if (document.hidden) {
       if (restoreLookAhead === null) restoreLookAhead = context.lookAhead;
-      context.lookAhead = HIDDEN_LOOKAHEAD;
+      context.lookAhead = horizon;
     } else if (restoreLookAhead !== null) {
       context.lookAhead = restoreLookAhead;
       restoreLookAhead = null;

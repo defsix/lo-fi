@@ -143,6 +143,8 @@ const keepAlive = createBackgroundKeepAlive({
   onPlay: () => { if (!engine.isPlaying) play(); },
   onStop: () => { if (engine.isPlaying) stop(); },
   bypass: new Set((params.get('bypass') || '').split(',').filter(Boolean)),
+  // ?horizon= seconds of scheduling to keep ahead while hidden.
+  hiddenLookAhead: params.get('horizon'),
 });
 
 async function play() {
