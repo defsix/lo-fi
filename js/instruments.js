@@ -7,6 +7,45 @@
 // is two oscillators and two envelopes; a plain one is a single oscillator,
 // and measurably less than half the cost. It sounds thinner - the FM Rhodes
 // is a lot of this music's character - so it is opt-in, never the default.
+// Tone's PolySynth builds a voice the first time it needs one, and a timer
+// disposes voices that have gone idle. For a fixed texture that settles; for
+// an arrangement that thickens and thins it never does. Measured here, the
+// keys pool cycles 12 -> 11 -> 10 -> 9 -> 12 every bar for the whole track,
+// so an FM voice - two oscillators, two envelopes and their gains - is torn
+// down and rebuilt on the main thread while the music plays. The scheduler
+// lives on that thread, which is how it reaches the ear.
+//
+// A fixed pool costs nothing in exchange: idle voices have stopped
+// oscillators, so the DSP is the same and only the churn goes. Measured at
+// 8x CPU throttle it cut main-thread blocking from 125 to 91 ms per second,
+// with no note dropped and no change to the sound.
+//
+// The collector runs on Tone's own context timer rather than the window's,
+// so it takes context.clearInterval; window.clearInterval silently does
+// nothing, which is how this looked like a dead end the first time.
+function pinVoices(poly) {
+  // Reaching into Tone's internals: if a future version moves them, leave
+  // the synth alone and take the churn rather than throwing on load.
+  if (typeof poly._getNextAvailableVoice !== 'function' || !Array.isArray(poly._availableVoices)) {
+    return poly;
+  }
+
+  poly.context.clearInterval(poly._gcTimeout);
+  poly._collectGarbage = () => {};
+
+  // Claim every voice, then hand them all back, so the pool is built out to
+  // maxPolyphony before a note is ever played.
+  const held = [];
+  for (let i = 0; i < poly.maxPolyphony; i++) {
+    const voice = poly._getNextAvailableVoice();
+    if (!voice) break;
+    held.push(voice);
+  }
+  for (const voice of held) poly._availableVoices.push(voice);
+
+  return poly;
+}
+
 export function createLightKeys(bus) {
   const filter = new Tone.Filter({ frequency: 3200, type: 'lowpass', rolloff: -12 }).connect(bus);
   const keys = new Tone.PolySynth(Tone.Synth, {
@@ -15,7 +54,9 @@ export function createLightKeys(bus) {
   }).connect(filter);
   keys.volume.value = -13;
   keys.maxPolyphony = 8;
-  return keys;
+  // The build for devices that cannot keep up is the one that can least
+  // afford to build voices mid-track.
+  return pinVoices(keys);
 }
 
 export function createLightLead(bus) {
@@ -26,7 +67,7 @@ export function createLightLead(bus) {
   }).connect(filter);
   lead.volume.value = -14;
   lead.maxPolyphony = 4;
-  return lead;
+  return pinVoices(lead);
 }
 
 export function createKeys(bus, reverbSend, bypass = new Set()) {
@@ -54,7 +95,7 @@ export function createKeys(bus, reverbSend, bypass = new Set()) {
   const send = new Tone.Gain(0.3).connect(reverbSend);
   keys.connect(send);
 
-  return keys;
+  return pinVoices(keys);
 }
 
 export function createLead(bus, reverbSend, bypass = new Set()) {
@@ -77,7 +118,7 @@ export function createLead(bus, reverbSend, bypass = new Set()) {
   const send = new Tone.Gain(0.34).connect(reverbSend);
   lead.connect(send);
 
-  return lead;
+  return pinVoices(lead);
 }
 
 export function createBass(bus) {

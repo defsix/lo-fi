@@ -261,6 +261,7 @@ Everything above 1 kHz being empty is a defect, not a style.
 | Sidechain pump | not started |
 | Saturation | not started |
 | Sectional arrangement | done — `js/sections.js` |
+| Fixed voice pool, playback-sized buffer | done — see `docs/audio-performance.md` |
 
 ---
 

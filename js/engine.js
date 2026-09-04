@@ -17,12 +17,11 @@ export class LofiEngine {
   // browser can be bisected without a rebuild.
   constructor(options = {}) {
     this.bypass = new Set(options.bypass || []);
-    // Null means: leave the browser's own default alone. See start().
-    // A number is seconds of requested buffering, which is far more direct
-    // than the vague 'playback' hint and is what a device on the low-latency
-    // audio path needs: a ~15ms buffer leaves the callback no slack at all.
+    // A number is seconds of requested buffering; a string is one of the
+    // browser's own categories. Default 'playback' — see start() for why.
+    // Pass ?latency=interactive to get the browser default back.
     const hint = options.latencyHint;
-    this.latencyHint = hint == null || hint === '' ? null : (Number.isNaN(Number(hint)) ? hint : Number(hint));
+    this.latencyHint = hint == null || hint === '' ? 'playback' : (Number.isNaN(Number(hint)) ? hint : Number(hint));
     this.master = null;
     this.keys = null;
     this.lead = null;
@@ -71,14 +70,22 @@ export class LofiEngine {
   }
 
   async start() {
-    // The context's latency hint is left to the browser unless asked for
-    // explicitly. Forcing 'playback' here once looked sensible - a stream
-    // does not need an instrument's small buffer - but measured against the
-    // current graph it changes the late-note rate by less than the variance
-    // between runs, so it buys nothing. It is not free, either: it is the
-    // one setting that reconfigures the browser's output stream, and Firefox
-    // was rendering a clean graph while its live output crackled. Anything
-    // that costs nothing and is the prime suspect should go.
+    // Ask for a playback-sized buffer. The browser's default is
+    // 'interactive' - the smallest latency it can manage without glitching -
+    // which is the right setting for an instrument you play and the wrong
+    // one for a stream nobody is playing. Measured in Chrome it is the
+    // difference between a 441-sample buffer and a 1024-sample one: 2.3x
+    // more time for the audio thread to render each block, for 13ms more
+    // before sound starts, which nothing here can perceive.
+    //
+    // This was rejected once on the grounds that it did not move the
+    // late-note rate. That was the wrong instrument: late notes measure the
+    // main thread, and buffer size protects the audio thread, so the test
+    // could not have seen the effect either way. Web Audio's own
+    // implementers are explicit that a larger render quantum is what lets a
+    // bigger graph render in time.
+    //
+    // ?latency=interactive restores the old behaviour for comparison.
     if (!this.contextConfigured && this.latencyHint) {
       Tone.setContext(new Tone.Context({ latencyHint: this.latencyHint }));
       this.contextConfigured = true;
