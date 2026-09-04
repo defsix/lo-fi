@@ -49,13 +49,18 @@ export function createMaster(bypass = new Set()) {
   // historically not, and the cost of denormal arithmetic shows up as CPU
   // spikes heard as crackle. Four cascaded biquads at 50Hz is the worst
   // case for it, which is why this is separately bypassable.
+  // The steep version is four cascaded biquads; the light build uses one.
   const rumble = bypass.has('filters')
     ? warmth
-    : new Tone.Filter({ frequency: 50, type: 'highpass', rolloff: -48 }).connect(warmth);
+    : new Tone.Filter({
+        frequency: 50,
+        type: 'highpass',
+        rolloff: bypass.has('light') ? -12 : -48,
+      }).connect(warmth);
 
   const bus = new Tone.Volume(-4).connect(rumble);
 
-  if (bypass.has('reverb')) return { bus, send: new Tone.Gain(0) };
+  if (bypass.has('reverb') || bypass.has('light')) return { bus, send: new Tone.Gain(0) };
 
   const reverb = new Tone.Freeverb({ roomSize: 0.72, dampening: 1600, wet: 1 }).connect(bus);
 

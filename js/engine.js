@@ -1,6 +1,6 @@
 import { pickKey, pickProgression, buildChords } from './theory.js';
 import { createMaster } from './master.js';
-import { createKeys, createLead, createBass } from './instruments.js';
+import { createKeys, createLead, createBass, createLightKeys, createLightLead } from './instruments.js';
 import { createDrumKit, drumsForBar } from './drums.js';
 import { compForBar, bassForBar } from './arrange.js';
 import { makeMotif, realiseMotif } from './melody.js';
@@ -42,8 +42,9 @@ export class LofiEngine {
     const master = createMaster(this.bypass);
     this.master = master.bus;
     this.reverbSend = master.send;
-    this.keys = createKeys(this.master, this.reverbSend, this.bypass);
-    this.lead = createLead(this.master, this.reverbSend, this.bypass);
+    const light = this.bypass.has('light');
+    this.keys = light ? createLightKeys(this.master) : createKeys(this.master, this.reverbSend, this.bypass);
+    this.lead = light ? createLightLead(this.master) : createLead(this.master, this.reverbSend, this.bypass);
     this.bass = createBass(this.master);
     this.drumKit = createDrumKit(this.master);
 

@@ -5,7 +5,11 @@ import { capture } from './capture.js';
 // ---- visualiser ---------------------------------------------------------
 const params = new URLSearchParams(location.search);
 const engine = new LofiEngine({
-  bypass: (params.get('bypass') || '').split(',').filter(Boolean),
+  // ?light is shorthand for the cheapest graph that still plays the music.
+  bypass: [
+    ...(params.get('bypass') || '').split(',').filter(Boolean),
+    ...(params.has('light') ? ['light', 'chorus', 'tremolo', 'delay'] : []),
+  ],
   latencyHint: params.get('latency') || undefined,
 });
 window.__engine = engine; // exposed for timing analysis in tests

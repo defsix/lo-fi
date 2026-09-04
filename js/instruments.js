@@ -3,6 +3,32 @@
 // The tonal voices take the master bus plus a send into the shared reverb.
 // Nothing here owns a reverb of its own — see master.js for why that matters.
 
+// A light build for devices whose audio backend cannot keep up. An FM voice
+// is two oscillators and two envelopes; a plain one is a single oscillator,
+// and measurably less than half the cost. It sounds thinner - the FM Rhodes
+// is a lot of this music's character - so it is opt-in, never the default.
+export function createLightKeys(bus) {
+  const filter = new Tone.Filter({ frequency: 3200, type: 'lowpass', rolloff: -12 }).connect(bus);
+  const keys = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.012, decay: 0.9, sustain: 0.22, release: 1.4 },
+  }).connect(filter);
+  keys.volume.value = -13;
+  keys.maxPolyphony = 8;
+  return keys;
+}
+
+export function createLightLead(bus) {
+  const filter = new Tone.Filter({ frequency: 3800, type: 'lowpass', rolloff: -12 }).connect(bus);
+  const lead = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.014, decay: 0.5, sustain: 0.18, release: 0.9 },
+  }).connect(filter);
+  lead.volume.value = -14;
+  lead.maxPolyphony = 4;
+  return lead;
+}
+
 export function createKeys(bus, reverbSend, bypass = new Set()) {
   const filter = new Tone.Filter({ frequency: 3200, type: 'lowpass', rolloff: -24 }).connect(bus);
   const chorus = bypass.has('chorus')
