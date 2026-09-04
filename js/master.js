@@ -15,11 +15,17 @@
 // audio thread and breaking the playback up. Freeverb is a handful of comb
 // and allpass filters and costs almost nothing by comparison.
 
-export function createMaster() {
-  const limiter = new Tone.Limiter(-3).toDestination();
+export function createMaster(bypass = new Set()) {
+  // Each stage can be bypassed from the URL, so a browser-specific fault can
+  // be bisected on the machine that actually has it.
+  const limiter = bypass.has('limiter')
+    ? new Tone.Gain(1).toDestination()
+    : new Tone.Limiter(-3).toDestination();
   const warmth = new Tone.Filter({ frequency: 9500, type: 'lowpass', rolloff: -12 }).connect(limiter);
   const rumble = new Tone.Filter({ frequency: 50, type: 'highpass', rolloff: -48 }).connect(warmth);
   const bus = new Tone.Volume(-4).connect(rumble);
+
+  if (bypass.has('reverb')) return { bus, send: new Tone.Gain(0) };
 
   const reverb = new Tone.Freeverb({ roomSize: 0.72, dampening: 1600, wet: 1 }).connect(bus);
 

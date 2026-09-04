@@ -3,7 +3,11 @@ import { chordLabel, romanLabel } from './theory.js';
 import { capture } from './capture.js';
 
 // ---- visualiser ---------------------------------------------------------
-const engine = new LofiEngine();
+const params = new URLSearchParams(location.search);
+const engine = new LofiEngine({
+  bypass: (params.get('bypass') || '').split(',').filter(Boolean),
+  latencyHint: params.get('latency') || undefined,
+});
 window.__engine = engine; // exposed for timing analysis in tests
 const canvas = document.getElementById('scope');
 const ctx = canvas.getContext('2d');

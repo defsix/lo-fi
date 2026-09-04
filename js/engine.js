@@ -11,7 +11,12 @@ const FFT_SIZE = 128;
 const BARS_PER_PHRASE = 4;
 
 export class LofiEngine {
-  constructor() {
+  // `options.bypass` names effects to leave out and `options.latencyHint`
+  // overrides the buffer size hint, so a fault that only appears in one
+  // browser can be bisected without a rebuild.
+  constructor(options = {}) {
+    this.bypass = new Set(options.bypass || []);
+    this.latencyHint = options.latencyHint || 'playback';
     this.master = null;
     this.keys = null;
     this.lead = null;
@@ -33,11 +38,11 @@ export class LofiEngine {
 
   build() {
     if (this.keys) return;
-    const master = createMaster();
+    const master = createMaster(this.bypass);
     this.master = master.bus;
     this.reverbSend = master.send;
-    this.keys = createKeys(this.master, this.reverbSend);
-    this.lead = createLead(this.master, this.reverbSend);
+    this.keys = createKeys(this.master, this.reverbSend, this.bypass);
+    this.lead = createLead(this.master, this.reverbSend, this.bypass);
     this.bass = createBass(this.master);
     this.drumKit = createDrumKit(this.master);
 
@@ -60,7 +65,7 @@ export class LofiEngine {
     // stream — and it is what makes the audio thread drop out under load.
     // Must happen before any node is built on the context.
     if (!this.contextConfigured) {
-      Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
+      Tone.setContext(new Tone.Context({ latencyHint: this.latencyHint }));
       this.contextConfigured = true;
     }
 
