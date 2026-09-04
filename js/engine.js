@@ -22,6 +22,10 @@ export class LofiEngine {
     // Pass ?latency=interactive to get the browser default back.
     const hint = options.latencyHint;
     this.latencyHint = hint == null || hint === '' ? 'playback' : (Number.isNaN(Number(hint)) ? hint : Number(hint));
+    // Opt-in until it is shown to be clean on a real device: it moves the
+    // whole mix onto a different output path.
+    this.useStream = !!options.useStream;
+    this.streamDestination = null;
     this.master = null;
     this.keys = null;
     this.lead = null;
@@ -43,7 +47,18 @@ export class LofiEngine {
 
   build() {
     if (this.keys) return;
-    const master = createMaster(this.bypass);
+    // Routing the mix through a MediaStream so it can be played by an
+    // <audio> element: Chrome grants no media notification, and no
+    // background playback, to audio that comes straight from Web Audio.
+    let output = null;
+    if (this.useStream) {
+      const raw = Tone.getContext().rawContext;
+      if (typeof raw.createMediaStreamDestination === 'function') {
+        this.streamDestination = raw.createMediaStreamDestination();
+        output = this.streamDestination;
+      }
+    }
+    const master = createMaster(this.bypass, output);
     this.master = master.bus;
     this.reverbSend = master.send;
     this.toneFilter = master.tone;

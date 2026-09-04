@@ -12,6 +12,9 @@ const engine = new LofiEngine({
     ...(params.has('light') ? ['light', 'chorus', 'tremolo', 'delay'] : []),
   ],
   latencyHint: params.get('latency') || undefined,
+  // ?stream routes the mix through an <audio> element, which is the only
+  // form of playback Chrome will keep alive with the screen off.
+  useStream: params.has('stream'),
 });
 window.__engine = engine; // exposed for timing analysis in tests
 const canvas = document.getElementById('scope');
@@ -119,7 +122,7 @@ async function play() {
   playBtn.disabled = true;
   try {
     await engine.start();
-    keepAlive.start();
+    keepAlive.start(engine.streamDestination ? engine.streamDestination.stream : null);
     engine.setVolume(Number(volumeInput.value));
     showMix();
     setStatus('generating - chords, bass and drums written live in your browser');

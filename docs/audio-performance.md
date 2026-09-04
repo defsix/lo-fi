@@ -102,12 +102,24 @@ scheduled keeps rendering, anything not yet scheduled never arrives. When
 Android stops servicing our timers the engine goes quiet within one
 lookahead window, which is exactly the reported symptom.
 
-`js/background.js` does the two things a page can do about it: look 4
-seconds ahead instead of 0.3 while hidden, so a throttled timer still
-leaves continuous music behind it, and play a silent looping element so the
-platform classes us as media playback rather than a page that merely holds
-an AudioContext — which also brings the lock-screen controls. Disable the
-element with `?bypass=keepalive` to compare.
+`js/background.js` looks 4 seconds ahead instead of 0.3 while hidden, so a
+throttled timer still leaves continuous music behind it.
+
+The second half took two attempts. The first played a *separate* silent
+element alongside the Web Audio, on the theory that any playing media would
+keep the page alive. Tested on the device: no lock-screen controls, no
+improvement. Two reasons, both documented by Chrome and neither guessed
+correctly the first time — [full audio focus is only granted to media
+longer than five seconds][8], and there is [no media notification for Web
+Audio at all unless it is played back through an audio element][9]. A
+sibling element could never have worked.
+
+So `?stream` routes the mix itself into a `MediaStreamAudioDestinationNode`
+and plays *that* through an `<audio>` element. Measured, the speakers path
+drops to zero and the stream carries the full signal at the same level, so
+the mix moves rather than doubling. It is opt-in until it is shown clean on
+a real device, because it moves the entire output onto a different path.
+`?bypass=keepalive` disables the element side for comparison.
 
 Firefox fixed background-tab `setTimeout` throttling for pages with an
 AudioContext in Firefox 50 ([bug 1181073][7]), but that is desktop tab
@@ -162,3 +174,5 @@ that could not see what it was asked about.
 [5]: https://padenot.github.io/web-audio-perf/
 [6]: https://github.com/generativefm/generative.fm
 [7]: https://bugzilla.mozilla.org/show_bug.cgi?id=1181073
+[8]: https://developer.chrome.com/blog/media-notifications
+[9]: https://developer.chrome.com/blog/media-session

@@ -15,7 +15,11 @@
 // audio thread and breaking the playback up. Freeverb is a handful of comb
 // and allpass filters and costs almost nothing by comparison.
 
-export function createMaster(bypass = new Set()) {
+// `output`, when given, replaces the speakers as the end of the chain. It is
+// how the whole mix can be routed into a MediaStream and played through an
+// <audio> element instead — see background.js for why that is worth doing.
+export function createMaster(bypass = new Set(), output = null) {
+  const sink = (node) => (output ? node.connect(output) : node.toDestination());
   // Each stage can be bypassed from the URL, so a browser-specific fault can
   // be bisected on the machine that actually has it.
   // -6 rather than -3, for headroom the file itself does not show a need
@@ -28,7 +32,7 @@ export function createMaster(bypass = new Set()) {
   // ceiling: it is a compressor, and its attack lets transients through
   // above the threshold. Measured, peaks were reaching -0.5dBFS against a
   // -6 threshold. This puts a fixed, predictable gap below full scale.
-  const trim = new Tone.Gain(0.7).toDestination();
+  const trim = sink(new Tone.Gain(0.7));
   const limiter = bypass.has('limiter')
     ? new Tone.Gain(1).connect(trim)
     : new Tone.Limiter(-6).connect(trim);
@@ -36,7 +40,7 @@ export function createMaster(bypass = new Set()) {
   // This is the one part of the chain that has never been tested: the
   // capture taps the bus, which is *upstream* of all of it.
   if (bypass.has('master')) {
-    const bare = new Tone.Volume(-4).toDestination();
+    const bare = sink(new Tone.Volume(-4));
     return { bus: bare, send: new Tone.Gain(0) };
   }
 

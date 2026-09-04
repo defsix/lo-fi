@@ -18,9 +18,15 @@
 //     needs to write more music. This costs nothing while visible.
 //  2. Be a media player. Android keeps media playback alive with the screen
 //     off; it does not extend the same courtesy to a page that merely holds
-//     an AudioContext. A silent looping element is what makes the browser
-//     class us as playback, and it is also what makes the Media Session
-//     controls appear on the lock screen.
+//     an AudioContext. Chrome is explicit about this: there is no media
+//     notification for Web Audio unless it is played back through an audio
+//     element. So the mix is routed into a MediaStream and played by one.
+//
+// A first attempt played a *separate* silent element alongside the Web
+// Audio, which produced no lock-screen controls and no improvement. Two
+// reasons, both now accounted for: Chrome only grants full audio focus to
+// media longer than five seconds, and by its own documentation a sibling
+// element does nothing for Web Audio's own output anyway.
 //
 // What we cannot reach: the browser's own battery setting. Android's
 // per-app "Optimised" vs "Unrestricted" is documented as the single most
@@ -34,7 +40,9 @@ const HIDDEN_LOOKAHEAD = 4;
 
 // A few milliseconds of silence, looped. Built here rather than shipped as
 // a base64 blob so it is readable: a 44-byte WAV header over zeroed samples.
-function silentWavUrl(seconds = 0.5, rate = 8000) {
+// Six seconds, not a fraction of one: Chrome only grants full audio focus
+// to media longer than five, so a short loop is ignored entirely.
+function silentWavUrl(seconds = 6, rate = 8000) {
   const frames = Math.floor(seconds * rate);
   const buffer = new ArrayBuffer(44 + frames * 2);
   const view = new DataView(buffer);
@@ -95,14 +103,20 @@ export function createBackgroundKeepAlive({ onPlay, onStop, bypass = new Set() }
   }
 
   return {
-    start() {
+    // `stream` is the engine's own output as a MediaStream. When present the
+    // element carries the real mix, which is the only arrangement Chrome
+    // treats as media playback; without it we fall back to a silent loop,
+    // which at least keeps a media element playing.
+    start(stream) {
       document.addEventListener('visibilitychange', onVisibilityChange);
       onVisibilityChange();
       describe(true);
       if (disabled) return;
       if (!element) {
-        element = new Audio(silentWavUrl());
-        element.loop = true;
+        element = stream ? new Audio() : new Audio(silentWavUrl());
+        if (stream) element.srcObject = stream;
+        element.loop = !stream; // A live stream has no end to loop back to.
+        element.autoplay = true;
         // Not muted: a muted element is not playback as far as the platform
         // is concerned, which is the entire reason this exists.
         element.volume = 1;
