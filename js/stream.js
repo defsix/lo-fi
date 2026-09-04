@@ -22,6 +22,7 @@
 
 import { renderChunk, toWavBlob, SECONDS_PER_BAR } from './render.js';
 import { createComposition } from './compose.js';
+import { readWords } from './words.js';
 
 // Chunks start short and grow. A first chunk of 52 seconds is 25 seconds of
 // silence after pressing play on a phone, which is far too long to ask of
@@ -55,16 +56,24 @@ const ELEMENT_COUNT = 3;
 export class LofiStream {
   constructor(options = {}) {
     this.bypass = new Set(options.bypass || []);
-    // 1 is lo-fi, 0 is clean. Switchable while playing: it takes effect on
-    // the next chunk, since the current one is already rendered.
-    this.texture = options.texture == null ? 1 : Number(options.texture);
+    // Off by default. The vinyl noise floor read as static rather than as a
+    // record, and with it gone the rendered stream should sound like the
+    // live engine rather than like a different instrument — same voices,
+    // same effects, same mix. The texture layer stays in the codebase to be
+    // dialled in deliberately later; ?texture=1 turns it on to hear it.
+    this.texture = options.texture == null ? 0 : Number(options.texture);
     // ?bars= pins the size and turns the ramp off, for measuring.
     this.fixedBars = Number(options.barsPerChunk) || null;
     this.nextChunkBars = this.fixedBars || FIRST_CHUNK_BARS;
     // Music seconds produced per second of rendering, measured. Null until
     // the first chunk has been rendered and there is something to measure.
     this.renderRatio = null;
-    this.state = createComposition();
+    // Three words, read into a sense the composition can act on. Null when
+    // nothing usable was typed, which means "choose freely" rather than a
+    // characterless middle.
+    this.reading = readWords(options.words);
+    this.sense = this.reading ? this.reading.sense : null;
+    this.state = createComposition(this.sense);
     this.nextBar = 0;
     this.playing = false;
     this.volume = 0.8;
@@ -243,6 +252,17 @@ export class LofiStream {
   // page. The right levels are something to arrive at, not to hand over.
   setTexture(amount) {
     this.texture = Math.max(0, Math.min(1, Number(amount) || 0));
+  }
+
+  // New words mean a new piece: everything already written was written for
+  // the old ones. Called while stopped, so nothing has to be thrown away.
+  setWords(words) {
+    this.reading = readWords(words);
+    this.sense = this.reading ? this.reading.sense : null;
+    this.state = createComposition(this.sense);
+    this.nextBar = 0;
+    this.nextChunkBars = this.fixedBars || FIRST_CHUNK_BARS;
+    return this.reading;
   }
 
   setVolume(percent) {

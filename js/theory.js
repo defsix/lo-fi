@@ -64,6 +64,18 @@ export function pickKey(rng = Math.random) {
   return KEYS[Math.floor(rng() * KEYS.length)];
 }
 
+// PROGRESSIONS run roughly brightest first to most inward last, so a
+// melancholy reading can select across that range. Not a hard index: a
+// window, so the same words still give different music each cycle.
+export function pickProgressionFor(melancholy, rng = Math.random) {
+  const spread = PROGRESSIONS.length - 1;
+  // -1 (bright) to 1 (inward) onto the list, then a window of two either way.
+  const centre = ((Math.max(-1, Math.min(1, melancholy)) + 1) / 2) * spread;
+  const from = Math.max(0, Math.round(centre) - 1);
+  const to = Math.min(spread, Math.round(centre) + 1);
+  return PROGRESSIONS[from + Math.floor(rng() * (to - from + 1))];
+}
+
 export function pickProgression(rng = Math.random) {
   return PROGRESSIONS[Math.floor(rng() * PROGRESSIONS.length)];
 }

@@ -9,7 +9,7 @@
 // A plan is what a bar contains. Events are that plan flattened into notes
 // with times, groove included. Neither touches an audio node.
 
-import { pickKey, pickProgression, buildChords } from './theory.js';
+import { pickKey, pickProgression, pickProgressionFor, buildChords } from './theory.js';
 import { compForBar, bassForBar } from './arrange.js';
 import { makeMotif, realiseMotif } from './melody.js';
 import { drumsForBar } from './drums.js';
@@ -19,16 +19,25 @@ import { sectionAt, isCycleStart } from './sections.js';
 export const BARS_PER_PHRASE = 4;
 export const STEPS_PER_BAR = 16;
 
-export function createComposition() {
-  const key = pickKey();
-  return { key, chords: buildChords(key, pickProgression()), motif: makeMotif() };
+// A reading from words, turned into the choices the composition makes.
+// Only what the engine has a real lever for: melancholy picks the
+// progression's colour, energy sets the tempo and how busy the drums are,
+// space and warmth are applied by the renderer to reverb and filtering.
+//
+// Progressions are ordered from brightest to most inward in theory.js, so
+// melancholy selects across that range rather than pretending to compose.
+export function createComposition(sense = null, rng = Math.random) {
+  const key = pickKey(rng);
+  const progression = sense ? pickProgressionFor(sense.melancholy, rng) : pickProgression(rng);
+  return { key, chords: buildChords(key, progression), motif: makeMotif(rng), sense };
 }
 
 // New material, same place in the arrangement.
-export function renewMaterial(state) {
-  state.key = pickKey();
-  state.chords = buildChords(state.key, pickProgression());
-  state.motif = makeMotif();
+export function renewMaterial(state, rng = Math.random) {
+  state.key = pickKey(rng);
+  const progression = state.sense ? pickProgressionFor(state.sense.melancholy, rng) : pickProgression(rng);
+  state.chords = buildChords(state.key, progression);
+  state.motif = makeMotif(rng);
   return state;
 }
 
@@ -38,18 +47,22 @@ export function planBar(state, bar, rng = Math.random) {
   // A new motif every other phrase: enough repetition to feel composed,
   // enough change that eight bars in it hasn't become wallpaper.
   if (bar > 0 && bar % (BARS_PER_PHRASE * 2) === 0 && rng() < 0.7) {
-    state.motif = makeMotif();
+    state.motif = makeMotif(rng);
   }
 
   // A fresh key and progression at the top of each cycle: the stream is
   // endless, so it should not be the same eight bars endlessly.
   let renewed = false;
   if (isCycleStart(bar)) {
-    renewMaterial(state);
+    renewMaterial(state, rng);
     renewed = true;
   }
 
   const section = sectionAt(bar);
+  // Energy leans on the section's own density rather than replacing it, so
+  // the arrangement still shapes the piece and the words tint it.
+  const energy = state.sense ? state.sense.energy : 0;
+  const density = Math.max(0.2, Math.min(1, section.density * (1 + energy * 0.35)));
   const index = bar % state.chords.length;
   const chord = state.chords[index];
   const nextChord = state.chords[(index + 1) % state.chords.length];
@@ -63,14 +76,14 @@ export function planBar(state, bar, rng = Math.random) {
     renewed,
     // Thinning the comping on the second half of the phrase keeps eight
     // bars from landing as the same bar four times.
-    comp: section.voices.keys ? compForBar(chord, barInPhrase !== 2 && section.density > 0.7, rng) : [],
+    comp: section.voices.keys ? compForBar(chord, barInPhrase !== 2 && density > 0.7, rng) : [],
     bass: section.voices.bass ? bassForBar(chord, nextChord, rng) : [],
     // The melody sits out sparse sections entirely, and thins in the rest.
     melody:
-      section.voices.lead && rng() < section.density
+      section.voices.lead && rng() < density
         ? realiseMotif(state.motif, chord, state.key, barInPhrase, rng)
         : [],
-    drums: section.voices.drums
+    drums: section.voices.drums && (energy > -0.75 || section.density > 0.5)
       ? drumsForBar(section.isLastBar ? 3 : barInPhrase, rng)
       : { kick: [], snare: [], ghosts: [], hats: [], fill: [] },
   };

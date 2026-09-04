@@ -37,6 +37,14 @@
   input[type=range]::-moz-range-thumb { width:12px; height:12px; border-radius:999px;
                       background:var(--amber); border:none; }
   :focus-visible { outline:2px solid var(--amber); outline-offset:3px; }
+  .words { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .words input { flex:1; min-width:88px; padding:11px 13px; border-radius:8px;
+                 border:1px solid var(--border); background:var(--panel);
+                 color:var(--text); font-family:var(--mono); font-size:12.5px; }
+  .words input::placeholder { color:var(--faint); }
+  .words input:focus { border-color:var(--amber); outline:none; }
+  .reading { margin:0; font-family:var(--mono); font-size:11px; color:var(--faint);
+             min-height:16px; }
   .status { margin:0; min-height:18px; font-family:var(--mono); font-size:11.5px;
             line-height:1.5; color:var(--dim); }
   .status[data-tone=error] { color:var(--alert); }
@@ -70,6 +78,13 @@
     </div>
   </div>
 
+  <div class="words">
+    <input id="w1" maxlength="18" placeholder="three" aria-label="First word" autocomplete="off" spellcheck="false">
+    <input id="w2" maxlength="18" placeholder="words" aria-label="Second word" autocomplete="off" spellcheck="false">
+    <input id="w3" maxlength="18" placeholder="optional" aria-label="Third word" autocomplete="off" spellcheck="false">
+  </div>
+  <p class="reading" id="reading"></p>
+
   <p class="status" id="status">press play — a few bars are written, then it plays while writing more</p>
 
   <dl class="readout">
@@ -84,7 +99,6 @@
     <b>lead</b> &mdash; a motif stated, answered, lifted, then left to breathe<br>
     <b>bass</b> &mdash; roots, fifths and a step that leads into the next chord<br>
     <b>drums</b> &mdash; 74 bpm, swung sixteenths, snare behind the beat, ghosts and fills<br>
-    <b>lo-fi</b> &mdash; vinyl dust, tape wow and flutter, saturation, and the mix breathing against the kick<br>
     written ahead of itself, faster than it plays, so it keeps going with the screen off.<br>
     nothing is sampled. it is composed on this device.
   </p>
@@ -96,10 +110,15 @@ import { LofiStream } from './js/stream.js';
 import { chordLabel, romanLabel } from './js/theory.js';
 
 const params = new URLSearchParams(location.search);
+const wordInputs = ['w1', 'w2', 'w3'].map((id) => document.getElementById(id));
+const currentWords = () => wordInputs.map((el) => el.value.trim()).filter(Boolean);
+
 const stream = new LofiStream({
   bypass: (params.get('bypass') || '').split(',').filter(Boolean),
   barsPerChunk: params.get('bars'),
-  texture: params.has('clean') ? 0 : 1,
+  // ?texture=1 to hear the lo-fi layer; off until its levels are settled.
+  texture: params.get('texture'),
+  words: (params.get('words') || '').split(/[ ,]+/).filter(Boolean),
 });
 window.__stream = stream;
 
@@ -143,7 +162,44 @@ stream.onChunk = (chunk) => {
   }
 };
 
+// Say what the words were understood as, including when a word was only
+// half understood — silently treating "blorf" as neutral would look like
+// the words did nothing.
+function showReading(reading) {
+  const el = $('reading');
+  if (!reading) { el.textContent = ''; return; }
+  const s = reading.sense;
+  const lean = (v, low, high) => (Math.abs(v) < 0.15 ? null : v > 0 ? high : low);
+  const traits = [
+    lean(s.warmth, 'dark', 'bright'),
+    lean(s.energy, 'still', 'restless'),
+    lean(s.space, 'close', 'spacious'),
+    lean(s.melancholy, 'bright', 'wistful'),
+  ].filter(Boolean);
+  const guessed = reading.words.filter((w) => w.how !== 'known');
+  el.textContent = (traits.length ? traits.join(' · ') : 'even')
+    + (guessed.length ? '   (' + guessed.map((w) => w.word + ' → ' + w.how).join(', ') + ')' : '');
+}
+
+// Words set before playing decide the piece. Changing them while it plays
+// would mean the music you hear was written for the old ones, so they take
+// effect on the next press of play.
+let wordsAtStart = '';
+for (const input of wordInputs) {
+  input.addEventListener('input', () => {
+    showReading(stream.setWords(currentWords()));
+    if (stream.isPlaying && currentWords().join(' ') !== wordsAtStart) {
+      setStatus('new words — press play again to write from them');
+    }
+  });
+}
+if (params.get('words')) {
+  wordInputs.forEach((el, i) => { el.value = (params.get('words').split(/[ ,]+/)[i] || ''); });
+}
+showReading(stream.reading);
+
 async function start() {
+  wordsAtStart = currentWords().join(' ');
   playBtn.disabled = true;
   setPlayingUI(true);
   try {

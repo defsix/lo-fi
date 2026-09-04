@@ -45,15 +45,22 @@ function fire(voice, event) {
  * pump against the kick. 0 is clean, 1 is the full amount. Clean is a real
  * choice rather than a degraded mode, and it is also the cheaper render.
  */
-export async function renderChunk({ state, startBar, bars, bypass = new Set(), texture = 1 }) {
+export async function renderChunk({ state, startBar, bars, bypass = new Set(), texture = 1, rng = Math.random }) {
   const musicSeconds = bars * SECONDS_PER_BAR;
   const dirt = Math.max(0, Math.min(1, texture));
 
   // Decide the whole chunk before rendering. planBar advances the
   // composition, and doing it outside Tone.Offline keeps the render callback
   // to nothing but scheduling.
+  // What the sense actually turned into, reported back so it can be checked
+  // rather than assumed.
+  const applied = {};
   const plans = [];
-  for (let i = 0; i < bars; i++) plans.push(planBar(state, startBar + i));
+  // `rng` is threaded through rather than left as Math.random so a render
+  // can be made repeatable. Without it, comparing two renders compares two
+  // different pieces of music: every measurement of a mix parameter here
+  // was noise until this existed.
+  for (let i = 0; i < bars; i++) plans.push(planBar(state, startBar + i, rng));
 
   const buffer = await Tone.Offline(async () => {
     Tone.getTransport().bpm.value = BPM;
@@ -78,9 +85,26 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
       target = pump.node;
     }
 
+    // Space scales how much of the voices reach the reverb. A gain in front
+    // of the send rather than a change to the reverb itself, so the room
+    // stays the same room and the words only decide how far into it we are.
+    const sense = state.sense;
+    const space = sense ? sense.space : 0;
+    const reverbSend = new Tone.Gain(Math.max(0.35, Math.min(1.8, 1 + space * 0.7))).connect(master.send);
+
+    // Brightness on the voices themselves. Measured on an isolated chord
+    // this spans about 3.8x of the energy above 1kHz; in a full mix the
+    // reverb and the other voices dilute it to nearer 1.2x, which is a tint
+    // rather than a transformation — which is what it should be.
+    const warmth = sense ? sense.warmth : 0;
+    const toneScale = Math.pow(2, warmth * 1.2);
+    applied.toneScale = toneScale;
+    applied.warmth = warmth;
+    applied.space = space;
+
     const voices = {
-      keys: light ? null : createKeys(target, master.send, bypass),
-      lead: light ? null : createLead(target, master.send, bypass),
+      keys: light ? null : createKeys(target, reverbSend, bypass, toneScale),
+      lead: light ? null : createLead(target, reverbSend, bypass, toneScale),
       bass: createBass(target),
     };
     const kit = createDrumKit(target);
@@ -96,10 +120,13 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
       // The section filter, moved as the arrangement moves. Offline there is
       // no draw loop to fight, so it is simply ramped in place.
       if (master.tone) {
-        master.tone.frequency.rampTo(1400 + plan.section.tone * 8100, 2.4, barStart);
+        // The master filter still follows the arrangement; warmth is applied
+        // on the voices instead, where it can be heard.
+        const cutoff = 1400 + plan.section.tone * 8100;
+        master.tone.frequency.rampTo(Math.max(900, Math.min(12000, cutoff)), 2.4, barStart);
       }
 
-      const events = eventsForBar(plan, SECONDS_PER_BAR);
+      const events = eventsForBar(plan, SECONDS_PER_BAR, rng);
       for (const [name, list] of Object.entries(events)) {
         const voice = targets[name];
         if (!voice || bypass.has(name)) continue;
@@ -109,13 +136,13 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
       // The record's own surface, and the mix breathing against the kick.
       // Both scheduled bar by bar, because an offline render has no timer to
       // run them from.
-      if (vinyl) vinyl.scheduleBar(barStart, SECONDS_PER_BAR);
+      if (vinyl) vinyl.scheduleBar(barStart, SECONDS_PER_BAR, rng);
       if (pump) for (const kick of events.kick) pump.duck(barStart + kick.time);
     }
     Tone.getTransport().start();
   }, musicSeconds + TAIL_SECONDS);
 
-  return { buffer, startBar, bars, plans, musicSeconds };
+  return { buffer, startBar, bars, plans, musicSeconds, applied };
 }
 
 /**

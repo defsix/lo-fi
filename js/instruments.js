@@ -70,8 +70,26 @@ export function createLightLead(bus) {
   return pinVoices(lead);
 }
 
-export function createKeys(bus, reverbSend, bypass = new Set()) {
-  const filter = new Tone.Filter({ frequency: 3200, type: 'lowpass', rolloff: -24 }).connect(bus);
+// `toneScale` is how bright this voice is, 1 being as written.
+//
+// It moves the modulation index, not the filter, and that took three
+// measurements to establish. Warmth was first applied to the master filter
+// at 9.5kHz: no effect, because this music has almost nothing up there.
+// Then to this voice's own low-pass at 3.2kHz: still no effect — measured
+// on an isolated chord, moving the cutoff from 1.6kHz to 6.4kHz changed the
+// energy above 1kHz from 12.34% to 12.06%, and in the wrong direction.
+//
+// The reason is that a filter can only remove. An FM voice with a sine
+// carrier and a modulation index of 2.4 has few sidebands to begin with, so
+// there is nothing above 1.6kHz for a filter to either keep or cut. The
+// index is what *creates* them, so it is the only real brightness control
+// this voice has. The filter still moves, a little, to follow.
+export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1) {
+  const filter = new Tone.Filter({
+    frequency: 3200 * Math.pow(toneScale, 0.5),
+    type: 'lowpass',
+    rolloff: -24,
+  }).connect(bus);
   const chorus = bypass.has('chorus')
     ? filter
     : new Tone.Chorus({ frequency: 0.6, delayTime: 4, depth: 0.4, wet: 0.3 }).connect(filter).start();
@@ -81,13 +99,18 @@ export function createKeys(bus, reverbSend, bypass = new Set()) {
 
   const keys = new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 2,
-    modulationIndex: 2.4,
+    modulationIndex: 2.4 * toneScale,
     oscillator: { type: 'sine' },
     modulation: { type: 'sine' },
     envelope: { attack: 0.012, decay: 0.9, sustain: 0.28, release: 1.8 },
     modulationEnvelope: { attack: 0.008, decay: 0.35, sustain: 0.1, release: 0.8 },
   }).connect(tremolo);
-  keys.volume.value = -10;
+  // Measured above 250Hz — the band the ear judges balance in — the keys
+  // were taking 25% of the mix against the lead's ~0%: not merely loud, but
+  // burying the melody they are supposed to sit under. Raw power share says
+  // the opposite (5%), because it is dominated by the kick and bass and is
+  // no guide to what sits forward.
+  keys.volume.value = -13;
   // Two comping hits a bar of four notes each, with a 1.8s release, needs
   // about a dozen voices. Twenty-four was DSP kept alive for nothing.
   keys.maxPolyphony = 12;
@@ -98,21 +121,27 @@ export function createKeys(bus, reverbSend, bypass = new Set()) {
   return pinVoices(keys);
 }
 
-export function createLead(bus, reverbSend, bypass = new Set()) {
-  const filter = new Tone.Filter({ frequency: 3800, type: 'lowpass', rolloff: -12 }).connect(bus);
+export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1) {
+  const filter = new Tone.Filter({
+    frequency: 3800 * Math.pow(toneScale, 0.5),
+    type: 'lowpass',
+    rolloff: -12,
+  }).connect(bus);
   const delay = bypass.has('delay')
     ? filter
     : new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.24, wet: 0.2 }).connect(filter);
 
   const lead = new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 3,
-    modulationIndex: 1.8,
+    modulationIndex: 1.8 * toneScale,
     oscillator: { type: 'triangle' },
     modulation: { type: 'sine' },
     envelope: { attack: 0.014, decay: 0.5, sustain: 0.2, release: 1.1 },
     modulationEnvelope: { attack: 0.01, decay: 0.25, sustain: 0.05, release: 0.6 },
   }).connect(delay);
-  lead.volume.value = -12;
+  // Up a little as the keys come down, so the motif is heard as the line it
+  // is rather than as something happening behind the chords.
+  lead.volume.value = -11;
   lead.maxPolyphony = 6;
 
   const send = new Tone.Gain(0.34).connect(reverbSend);
