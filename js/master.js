@@ -18,9 +18,20 @@
 export function createMaster(bypass = new Set()) {
   // Each stage can be bypassed from the URL, so a browser-specific fault can
   // be bisected on the machine that actually has it.
+  // -6 rather than -3, for headroom the file itself does not show a need
+  // for. A signal can have no sample over full scale and still clip once the
+  // browser resamples it to the device rate, because reconstruction
+  // overshoots between the samples. That is inter-sample peaking, it is why
+  // streaming targets leave about a decibel spare, and it produces exactly
+  // the reported symptom: a clean capture and a distorted live output.
+  // A trim after the limiter, because the limiter does not actually hold a
+  // ceiling: it is a compressor, and its attack lets transients through
+  // above the threshold. Measured, peaks were reaching -0.5dBFS against a
+  // -6 threshold. This puts a fixed, predictable gap below full scale.
+  const trim = new Tone.Gain(0.7).toDestination();
   const limiter = bypass.has('limiter')
-    ? new Tone.Gain(1).toDestination()
-    : new Tone.Limiter(-3).toDestination();
+    ? new Tone.Gain(1).connect(trim)
+    : new Tone.Limiter(-6).connect(trim);
   const warmth = new Tone.Filter({ frequency: 9500, type: 'lowpass', rolloff: -12 }).connect(limiter);
   const rumble = new Tone.Filter({ frequency: 50, type: 'highpass', rolloff: -48 }).connect(warmth);
   const bus = new Tone.Volume(-4).connect(rumble);

@@ -16,7 +16,8 @@ export class LofiEngine {
   // browser can be bisected without a rebuild.
   constructor(options = {}) {
     this.bypass = new Set(options.bypass || []);
-    this.latencyHint = options.latencyHint || 'playback';
+    // Null means: leave the browser's own default alone. See start().
+    this.latencyHint = options.latencyHint || null;
     this.master = null;
     this.keys = null;
     this.lead = null;
@@ -59,12 +60,15 @@ export class LofiEngine {
   }
 
   async start() {
-    // Ask the browser for a playback-sized audio buffer instead of the
-    // default interactive one. A small buffer exists to keep key-to-sound
-    // latency low, which matters for an instrument and not at all for a
-    // stream — and it is what makes the audio thread drop out under load.
-    // Must happen before any node is built on the context.
-    if (!this.contextConfigured) {
+    // The context's latency hint is left to the browser unless asked for
+    // explicitly. Forcing 'playback' here once looked sensible - a stream
+    // does not need an instrument's small buffer - but measured against the
+    // current graph it changes the late-note rate by less than the variance
+    // between runs, so it buys nothing. It is not free, either: it is the
+    // one setting that reconfigures the browser's output stream, and Firefox
+    // was rendering a clean graph while its live output crackled. Anything
+    // that costs nothing and is the prime suspect should go.
+    if (!this.contextConfigured && this.latencyHint) {
       Tone.setContext(new Tone.Context({ latencyHint: this.latencyHint }));
       this.contextConfigured = true;
     }
