@@ -47,10 +47,14 @@ export class LofiEngine {
     this.bass = createBass(this.master);
     this.drumKit = createDrumKit(this.master);
 
-    this.analyser = new Tone.Analyser('fft', FFT_SIZE);
-    this.meter = new Tone.Analyser('waveform', 512);
-    this.master.connect(this.analyser);
-    this.master.connect(this.meter);
+    // ?bypass=meters removes the analysers, which are polled from the main
+    // thread every frame for the visualiser.
+    if (!this.bypass.has('meters')) {
+      this.analyser = new Tone.Analyser('fft', FFT_SIZE);
+      this.meter = new Tone.Analyser('waveform', 512);
+      this.master.connect(this.analyser);
+      this.master.connect(this.meter);
+    }
 
     // One sequence drives everything on a sixteenth grid. Each voice takes
     // its own offset from the groove template rather than sitting on the
@@ -132,8 +136,10 @@ export class LofiEngine {
     return this.analyser ? this.analyser.getValue() : null;
   }
 
+  // null, not 0, when there is no meter: 0 would read as silence and trip
+  // the watchdog into reporting a fault that isn't there.
   getLevel() {
-    if (!this.meter) return 0;
+    if (!this.meter) return null;
     const buf = this.meter.getValue();
     let sum = 0;
     for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];

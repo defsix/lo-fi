@@ -32,8 +32,27 @@ export function createMaster(bypass = new Set()) {
   const limiter = bypass.has('limiter')
     ? new Tone.Gain(1).connect(trim)
     : new Tone.Limiter(-6).connect(trim);
-  const warmth = new Tone.Filter({ frequency: 9500, type: 'lowpass', rolloff: -12 }).connect(limiter);
-  const rumble = new Tone.Filter({ frequency: 50, type: 'highpass', rolloff: -48 }).connect(warmth);
+  // ?bypass=master sends the bus straight out, skipping every master stage.
+  // This is the one part of the chain that has never been tested: the
+  // capture taps the bus, which is *upstream* of all of it.
+  if (bypass.has('master')) {
+    const bare = new Tone.Volume(-4).toDestination();
+    return { bus: bare, send: new Tone.Gain(0) };
+  }
+
+  const warmth = bypass.has('filters')
+    ? limiter
+    : new Tone.Filter({ frequency: 9500, type: 'lowpass', rolloff: -12 }).connect(limiter);
+
+  // A steep filter fed near-silence drives its state toward denormalised
+  // floats. Chrome flushes those to zero on the audio thread; Firefox has
+  // historically not, and the cost of denormal arithmetic shows up as CPU
+  // spikes heard as crackle. Four cascaded biquads at 50Hz is the worst
+  // case for it, which is why this is separately bypassable.
+  const rumble = bypass.has('filters')
+    ? warmth
+    : new Tone.Filter({ frequency: 50, type: 'highpass', rolloff: -48 }).connect(warmth);
+
   const bus = new Tone.Volume(-4).connect(rumble);
 
   if (bypass.has('reverb')) return { bus, send: new Tone.Gain(0) };

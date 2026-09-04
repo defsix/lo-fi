@@ -142,8 +142,14 @@ setInterval(() => {
   }
 
   const level = engine.getLevel();
-  const db = level > 0.0001 ? Math.round(20 * Math.log10(level)) : -Infinity;
   const state = engine.getContextState();
+
+  if (level === null) {
+    outputEl.textContent = 'meter off';
+    return;
+  }
+
+  const db = level > 0.0001 ? Math.round(20 * Math.log10(level)) : -Infinity;
   outputEl.textContent = (db === -Infinity ? 'silent' : db + ' dB') + (state === 'running' ? '' : ' / ' + state);
 
   if (state !== 'running') {
