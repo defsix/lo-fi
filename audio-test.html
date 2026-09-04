@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Audio Control Test</title>
+<style>
+  :root {
+    --bg: oklch(0.14 0.012 55);
+    --panel: oklch(0.19 0.014 50);
+    --border: oklch(0.26 0.016 50);
+    --text: oklch(0.95 0.01 75);
+    --dim: oklch(0.68 0.02 60);
+    --faint: oklch(0.48 0.018 55);
+    --amber: oklch(0.78 0.15 65);
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 32px 20px;
+    background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 14px; line-height: 1.6;
+  }
+  main { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  h1 { font-size: 17px; color: var(--amber); margin: 0; }
+  p { margin: 0; color: var(--dim); font-size: 13px; }
+  .test {
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; background: var(--panel);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .label { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+  .what { font-size: 13px; color: var(--dim); }
+  button {
+    font: inherit; font-size: 13px; padding: 10px 18px; border-radius: 999px;
+    border: 1px solid var(--amber); background: transparent; color: var(--amber);
+    cursor: pointer; align-self: flex-start;
+  }
+  button[data-on="true"] { background: var(--amber); color: var(--bg); }
+  .note { font-size: 12px; color: var(--faint); }
+  code { color: var(--amber); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Web Audio control test</h1>
+  <p>
+    None of the lo-fi engine is on this page. Each test is the simplest thing
+    that makes a sound at that layer, so whichever one crackles tells you
+    where the fault is. Listen to each for ten seconds or so.
+  </p>
+
+  <div class="test">
+    <span class="label">1 &middot; plain audio element</span>
+    <span class="what">A looping tone through &lt;audio&gt;, not Web Audio at all.</span>
+    <button id="b1">play tone</button>
+    <span class="note">Crackles here too &rarr; the fault is the device or browser's audio output generally, nothing to do with Web Audio.</span>
+  </div>
+
+  <div class="test">
+    <span class="label">2 &middot; bare web audio oscillator</span>
+    <span class="what">One OscillatorNode straight to the destination. No library, four lines of code.</span>
+    <button id="b2">play oscillator</button>
+    <span class="note">Clean in 1 but crackles here &rarr; Web Audio itself is failing on this browser and device. That is a Firefox bug, not an app bug.</span>
+  </div>
+
+  <div class="test">
+    <span class="label">3 &middot; web audio, a few nodes</span>
+    <span class="what">Oscillator, gain, filter and a little polyphony &mdash; still no library.</span>
+    <button id="b3">play chord</button>
+    <span class="note">Clean in 2 but crackles here &rarr; it copes with a trivial graph and not a modest one, which points at CPU headroom.</span>
+  </div>
+
+  <div class="test">
+    <span class="label">context</span>
+    <span class="what" id="info">press a test to read the audio context</span>
+  </div>
+</main>
+
+<script>
+  const info = document.getElementById('info');
+  let ctx = null;
+
+  function context() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return ctx;
+  }
+
+  function report() {
+    const c = context();
+    info.textContent =
+      `sample rate ${c.sampleRate}Hz · state ${c.state} · ` +
+      `baseLatency ${c.baseLatency !== undefined ? c.baseLatency.toFixed(4) + 's' : 'n/a'} · ` +
+      `outputLatency ${c.outputLatency !== undefined ? c.outputLatency.toFixed(4) + 's' : 'n/a'}`;
+  }
+
+  // --- 1: a looping tone through <audio>, built as a WAV in memory so the
+  // page stays self-contained and no network is involved.
+  function toneWavUrl(freq, seconds, rate) {
+    const n = Math.floor(rate * seconds);
+    const buf = new ArrayBuffer(44 + n * 2);
+    const view = new DataView(buf);
+    const str = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+    str(0, 'RIFF'); view.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
+    str(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true); view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    str(36, 'data'); view.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) {
+      // A whole number of cycles, so the loop point is seamless.
+      view.setInt16(44 + i * 2, Math.sin((2 * Math.PI * freq * i) / rate) * 0.25 * 32767, true);
+    }
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
+  const el = new Audio();
+  el.loop = true;
+  const b1 = document.getElementById('b1');
+  b1.addEventListener('click', () => {
+    if (el.paused) {
+      if (!el.src) el.src = toneWavUrl(220, 1, 44100);
+      el.play();
+      b1.dataset.on = 'true';
+      b1.textContent = 'stop tone';
+    } else {
+      el.pause();
+      b1.dataset.on = 'false';
+      b1.textContent = 'play tone';
+    }
+  });
+
+  // --- 2: one oscillator, nothing else.
+  let osc = null;
+  const b2 = document.getElementById('b2');
+  b2.addEventListener('click', async () => {
+    const c = context();
+    await c.resume();
+    if (!osc) {
+      osc = c.createOscillator();
+      const g = c.createGain();
+      g.gain.value = 0.15;
+      osc.frequency.value = 220;
+      osc.connect(g).connect(c.destination);
+      osc.start();
+      b2.dataset.on = 'true';
+      b2.textContent = 'stop oscillator';
+    } else {
+      osc.stop();
+      osc.disconnect();
+      osc = null;
+      b2.dataset.on = 'false';
+      b2.textContent = 'play oscillator';
+    }
+    report();
+  });
+
+  // --- 3: a handful of nodes, still no library.
+  let chord = null;
+  const b3 = document.getElementById('b3');
+  b3.addEventListener('click', async () => {
+    const c = context();
+    await c.resume();
+    if (!chord) {
+      const out = c.createGain();
+      out.gain.value = 0.08;
+      const filter = c.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 2000;
+      filter.connect(out).connect(c.destination);
+      chord = [220, 277.18, 329.63, 415.3].map((f) => {
+        const o = c.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = f;
+        const g = c.createGain();
+        g.gain.value = 0.25;
+        o.connect(g).connect(filter);
+        o.start();
+        return o;
+      });
+      chord.push(out);
+      b3.dataset.on = 'true';
+      b3.textContent = 'stop chord';
+    } else {
+      chord.forEach((n) => { try { n.stop(); } catch (e) { /* gain node */ } n.disconnect(); });
+      chord = null;
+      b3.dataset.on = 'false';
+      b3.textContent = 'play chord';
+    }
+    report();
+  });
+</script>
+</body>
+</html>
