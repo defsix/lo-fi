@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>076 lofi · chunk render test</title>
+<style>
+  :root { --bg:#1a1613; --panel:#241f1b; --border:#3a322c; --text:#f0eae2; --dim:#a99a8a; --amber:#e3a24d; --bad:#e06c5a; --good:#7fc08a; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 18px; background:var(--bg); color:var(--text);
+         font:14px/1.6 "Space Mono",ui-monospace,Menlo,monospace; }
+  main { max-width:640px; margin:0 auto; display:flex; flex-direction:column; gap:20px; }
+  h1 { font-size:16px; color:var(--amber); margin:0; letter-spacing:.04em; }
+  p { margin:0; color:var(--dim); }
+  button { font:inherit; padding:12px 18px; border-radius:8px; border:1px solid var(--amber);
+           background:transparent; color:var(--amber); cursor:pointer; }
+  button:disabled { opacity:.45; cursor:progress; }
+  .panel { border:1px solid var(--border); border-radius:10px; padding:16px; background:var(--panel); }
+  dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:6px 16px; }
+  dt { color:var(--dim); }
+  dd { margin:0; font-variant-numeric:tabular-nums; }
+  .verdict { font-size:15px; padding:12px; border-radius:8px; text-align:center; }
+  .verdict.good { background:rgba(127,192,138,.14); color:var(--good); }
+  .verdict.bad { background:rgba(224,108,90,.14); color:var(--bad); }
+  audio { width:100%; margin-top:12px; }
+  ol { margin:0; padding-left:20px; color:var(--dim); }
+  li { margin-bottom:6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>chunk render test</h1>
+  <p>Two questions this answers on <em>this</em> device: how fast it renders music
+     without playing it, and whether the result survives the screen turning off.</p>
+
+  <button id="go">render 30 seconds</button>
+  <div class="panel">
+    <dl>
+      <dt>status</dt><dd id="status">idle</dd>
+      <dt>render time</dt><dd id="time">&mdash;</dd>
+      <dt>vs realtime</dt><dd id="ratio">&mdash;</dd>
+      <dt>size</dt><dd id="size">&mdash;</dd>
+    </dl>
+    <div id="verdict"></div>
+    <audio id="player" controls loop></audio>
+  </div>
+
+  <p><b>Then:</b></p>
+  <ol>
+    <li>Press play on the bar above.</li>
+    <li>Turn the screen off. Wait a minute.</li>
+    <li>Does it keep playing? Are there lock-screen controls?</li>
+  </ol>
+  <p>This is a single pre-rendered chunk on loop, not the live engine. If it
+     survives the screen going off, the chunked architecture works here and the
+     real version queues one chunk after another.</p>
+</main>
+
+<script src="vendor/tone.js"></script>
+<script type="module">
+import { createMaster } from './js/master.js';
+import { createKeys, createLead, createBass } from './js/instruments.js';
+import { createDrumKit, drumsForBar } from './js/drums.js';
+import { pickKey, pickProgression, buildChords } from './js/theory.js';
+import { compForBar, bassForBar } from './js/arrange.js';
+import { makeMotif, realiseMotif } from './js/melody.js';
+import { accent } from './js/groove.js';
+import { sectionAt } from './js/sections.js';
+
+const BPM = 74;
+const SECONDS = 30;
+const $ = (id) => document.getElementById(id);
+
+// AudioBuffer to WAV, so the result can go straight into an <audio> element.
+// Uncompressed on purpose: encoding is the thing being measured, and adding
+// an encoder here would measure the encoder instead.
+function toWav(buffer) {
+  const channels = Math.min(2, buffer.numberOfChannels);
+  const frames = buffer.length;
+  const bytes = 44 + frames * channels * 2;
+  const view = new DataView(new ArrayBuffer(bytes));
+  const ascii = (o, t) => { for (let i = 0; i < t.length; i++) view.setUint8(o + i, t.charCodeAt(i)); };
+  ascii(0, 'RIFF'); view.setUint32(4, bytes - 8, true); ascii(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true); view.setUint32(24, buffer.sampleRate, true);
+  view.setUint32(28, buffer.sampleRate * channels * 2, true);
+  view.setUint16(32, channels * 2, true); view.setUint16(34, 16, true);
+  ascii(36, 'data'); view.setUint32(40, frames * channels * 2, true);
+  const data = [];
+  for (let c = 0; c < channels; c++) data.push(buffer.getChannelData(c));
+  let offset = 44;
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < channels; c++) {
+      const s = Math.max(-1, Math.min(1, data[c][i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      offset += 2;
+    }
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+async function render(seconds) {
+  return Tone.Offline(async () => {
+    Tone.getTransport().bpm.value = BPM;
+    const master = createMaster(new Set());
+    const keys = createKeys(master.bus, master.send, new Set());
+    const lead = createLead(master.bus, master.send, new Set());
+    const bass = createBass(master.bus);
+    const kit = createDrumKit(master.bus);
+    const key = pickKey();
+    const chords = buildChords(key, pickProgression());
+    const motif = makeMotif();
+
+    const perBar = (60 / BPM) * 4;
+    const stepDur = perBar / 16;
+    // Start partway in so the chunk has drums and melody, not just the intro.
+    const startBar = 16;
+    for (let n = 0; n < Math.ceil(seconds / perBar); n++) {
+      const bar = startBar + n;
+      const at = n * perBar;
+      const section = sectionAt(bar);
+      const chord = chords[bar % chords.length];
+      const next = chords[(bar + 1) % chords.length];
+      const byStep = (a, b) => a.step - b.step;
+      if (section.voices.keys) {
+        for (const hit of compForBar(chord, true, Math.random).sort(byStep))
+          hit.notes.forEach((note, i) =>
+            keys.triggerAttackRelease(note, hit.duration, at + hit.step * stepDur + i * hit.roll, hit.velocity));
+      }
+      // Monophonic voices reject a time earlier than the last one given.
+      if (section.voices.bass) {
+        for (const hit of bassForBar(chord, next, Math.random).sort(byStep))
+          bass.triggerAttackRelease(hit.note, hit.duration, at + hit.step * stepDur, hit.velocity);
+      }
+      if (section.voices.lead) {
+        for (const nt of realiseMotif(motif, chord, key, bar % 4, Math.random).sort(byStep))
+          lead.triggerAttackRelease(nt.note, nt.duration, at + nt.step * stepDur, nt.velocity);
+      }
+      if (section.voices.drums) {
+        const d = drumsForBar(bar % 4, Math.random);
+        const asc = (a, b) => a - b;
+        for (const s of [...d.kick].sort(asc)) kit.kick.triggerAttackRelease('A1', '8n', at + s * stepDur, 0.9);
+        for (const s of [...d.snare].sort(asc)) kit.snare.triggerAttackRelease('16n', at + s * stepDur, 0.66);
+        for (const s of [...d.hats].sort(asc)) kit.hat.triggerAttackRelease('32n', at + s * stepDur, accent(s) * 0.55);
+      }
+    }
+    Tone.getTransport().start();
+  }, seconds);
+}
+
+$('go').addEventListener('click', async () => {
+  $('go').disabled = true;
+  $('status').textContent = 'rendering…';
+  $('verdict').className = '';
+  $('verdict').textContent = '';
+  try {
+    const t0 = performance.now();
+    const buffer = await render(SECONDS);
+    const ms = performance.now() - t0;
+    const ratio = (buffer.duration * 1000) / ms;
+
+    $('time').textContent = (ms / 1000).toFixed(2) + ' s';
+    $('ratio').textContent = ratio.toFixed(2) + '×' + (ratio >= 1 ? ' faster' : ' SLOWER');
+    const blob = toWav(buffer);
+    $('size').textContent = (blob.size / 1048576).toFixed(1) + ' MB for ' + buffer.duration.toFixed(0) + ' s';
+
+    // Comfortable means: render the next chunk well inside the time the
+    // current one plays, with room for the device to be busy.
+    const ok = ratio >= 2;
+    $('verdict').className = 'verdict ' + (ok ? 'good' : 'bad');
+    $('verdict').textContent = ok
+      ? 'fast enough — renders ' + ratio.toFixed(1) + '× quicker than it plays'
+      : ratio >= 1
+        ? 'marginal — only ' + ratio.toFixed(2) + '× realtime, too little headroom'
+        : 'too slow — cannot render faster than it plays';
+
+    $('player').src = URL.createObjectURL(blob);
+    $('status').textContent = 'done — press play, then turn the screen off';
+
+    if ('mediaSession' in navigator && window.MediaMetadata) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'chunk render test', artist: '076 lofi',
+      });
+    }
+  } catch (err) {
+    $('status').textContent = 'failed: ' + (err && err.message ? err.message : err);
+    $('verdict').className = 'verdict bad';
+    $('verdict').textContent = 'render threw';
+  } finally {
+    $('go').disabled = false;
+  }
+});
+</script>
+</body>
+</html>

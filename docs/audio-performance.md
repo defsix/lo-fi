@@ -274,7 +274,40 @@ the comparable move would be rendering its own voices to buffers once at
 startup and playing those back — still nothing sampled from anyone, but
 buffer reads instead of live FM. Not done, and a large change.
 
-## Verdict on screen-off playback
+## The architecture question, asked too late
+
+Everything above optimises *live* synthesis. The question that should have
+come first is whether live synthesis is the right architecture for a phone
+at all, and the answer is probably not.
+
+The alternative is standard and was named here only in passing, as
+"encode in the browser and feed Media Source Extensions", called large, and
+dropped in favour of recommending a server. That was wrong on both counts.
+Render the music to audio in chunks of thirty seconds or so, play each
+chunk through an `<audio>` element, and queue the next while the current one
+plays. Generation stays in the browser.
+
+It inverts the exact arithmetic that beat us. Live scheduling needs the
+main thread every fraction of a second, forever. Chunked rendering needs a
+burst of CPU per chunk and then nothing at all — an `<audio>` element plays
+with no JavaScript running, which is precisely what a locked phone allows.
+It also gets background playback and lock-screen controls for free, because
+it is a finite, seekable media resource, which is the thing Android wanted
+all along and a live synthesiser could never provide.
+
+The cost is whether the device can render faster than it plays. Measured
+here with `Tone.Offline` on the real voices and master chain: 1.6x realtime
+for the full graph, 2.6x with reverb, chorus, tremolo and delay bypassed —
+so the reverb is about 40% of it. CPU throttling does not reach the offline
+render thread, so those numbers are not a phone proxy and nothing here can
+make them one.
+
+`render-test.html` exists to get that number on the device, and to prove
+the other half at the same time: it renders thirty seconds, reports the
+ratio, and hands the result to an `<audio>` element to be played with the
+screen off.
+
+## Verdict on live screen-off playback
 
 Not achievable here. Four approaches, each reasoned from documentation or
 measurement: a silent sibling element, a six-second one, the real mix
