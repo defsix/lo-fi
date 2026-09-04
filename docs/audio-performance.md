@@ -179,6 +179,35 @@ one that produced the fixes above. Those fixes stand on their own
 measurements — the voice churn and the undersized buffer were both real —
 they were simply not the whole of it.
 
+## The visualiser was a real cost, and the measurements hid it
+
+On the Pixel, `?light&bypass=visual,meters` played at about 97% good on an
+awake screen — the first configuration that essentially worked. `?light`
+alone did not. So the difference was not the cheap synths. It was removing
+the canvas and the analysers.
+
+Two faults in the drawing code, both invisible on a desktop:
+
+- The canvas sized itself to the full device pixel ratio. At the Pixel's
+  2.3 that is 5.3x the pixels to fill, on the machine least able to afford
+  them, for sixty-four heavily smoothed bars. Capped at 1, and they look
+  the same.
+- The draw loop started at page load and ran for the life of the tab,
+  drawing a flat line at full rate over a silent engine. It now runs only
+  while playing.
+
+Measured at 2.3 device pixel ratio: 70,680 canvas pixels against roughly
+374,000, at 20 frames a second rather than 30, and zero draws while
+stopped. About eight times less work while playing.
+
+Worth recording why this took so long to find. `?bypass=visual,meters` was
+tested early and appeared to change nothing, so the visualiser was
+dismissed. That test ran in a headless container where a canvas is nearly
+free — the cost being measured did not exist on the hardware doing the
+measuring. Every conclusion in this file that came from the throttled
+harness carries that caveat: it can measure main-thread pressure, but only
+the pressure that hardware actually feels.
+
 ## What did work: media session
 
 The five-second rule was the blocker. With a six-second silent element,

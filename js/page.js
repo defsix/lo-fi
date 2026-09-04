@@ -24,8 +24,15 @@ const smoothed = new Array(BIN_COUNT).fill(0);
 let cssWidth = 0;
 let cssHeight = 0;
 
+// A phone reports a device pixel ratio around 2.3, which means a canvas with
+// 5.3x the pixels to fill on the machine least able to afford it — and this
+// is sixty-four soft bars, not text. Measured on a Pixel, removing the
+// visualiser was the difference between crackling and playing, so its cost
+// is not theoretical. Capped at 1: the bars look the same.
+const MAX_DPR = 1;
+
 function sizeCanvas() {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
   const rect = canvas.getBoundingClientRect();
   cssWidth = rect.width;
   cssHeight = rect.height;
@@ -38,12 +45,17 @@ function sizeCanvas() {
 // at 60fps that competes with the note scheduling on the same thread.
 const AMBER = getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#e3a24d';
 
-// The visualiser is decoration; the audio is not. Half frame rate keeps it
-// smooth enough to read while leaving the main thread free to schedule.
-const FRAME_MS = 1000 / 30;
+// The visualiser is decoration; the audio is not. Twenty frames a second is
+// still smooth for bars that are already heavily smoothed, and it leaves the
+// main thread — where notes are scheduled — that much freer.
+const FRAME_MS = 1000 / 20;
 let lastFrame = 0;
+let scopeRunning = false;
 
 function drawScope(now) {
+  // Only while playing. This loop used to start at page load and run for the
+  // life of the tab, drawing a flat line at full rate over a silent engine.
+  if (!scopeRunning) return;
   requestAnimationFrame(drawScope);
   if (now - lastFrame < FRAME_MS) return;
   lastFrame = now;
@@ -67,6 +79,21 @@ function drawScope(now) {
     ctx.fillRect(x, mid - half, barWidth, half * 2);
   }
   ctx.globalAlpha = 1;
+}
+
+const scopeEnabled = !(params.get('bypass') || '').includes('visual');
+
+function startScope() {
+  if (!scopeEnabled || scopeRunning) return;
+  scopeRunning = true;
+  requestAnimationFrame(drawScope);
+}
+
+function stopScope() {
+  scopeRunning = false;
+  // Leave the panel empty rather than frozen mid-bar.
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+  smoothed.fill(0);
 }
 
 // ---- controls -----------------------------------------------------------
@@ -123,6 +150,7 @@ async function play() {
   try {
     await engine.start();
     keepAlive.start(engine.streamDestination ? engine.streamDestination.stream : null);
+    startScope();
     engine.setVolume(Number(volumeInput.value));
     showMix();
     setStatus('generating - chords, bass and drums written live in your browser');
@@ -137,6 +165,7 @@ async function play() {
 function stop() {
   engine.stop();
   keepAlive.stop();
+  stopScope();
   setPlayingUI(false);
   setStatus('stopped');
 }
@@ -230,4 +259,4 @@ setPlayingUI(false);
 
 // ?bypass=visual stops the canvas entirely. It polls an analyser every frame
 // on the same thread that schedules the notes.
-if (!params.get('bypass')?.includes('visual')) requestAnimationFrame(drawScope);
+
