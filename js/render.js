@@ -18,6 +18,7 @@ import { createMaster } from './master.js';
 import { createKeys, createLead, createBass } from './instruments.js';
 import { createDrumKit } from './drums.js';
 import { planBar, eventsForBar } from './compose.js';
+import { sectionAt } from './sections.js';
 import { createVinyl, createTapeWobble, createSaturation, createPump } from './texture.js';
 
 export const BPM = 74;
@@ -65,6 +66,17 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
   const buffer = await Tone.Offline(async () => {
     Tone.getTransport().bpm.value = BPM;
     const master = createMaster(bypass);
+
+    // Start the filter where the previous chunk left it. Every chunk builds
+    // a fresh master, so without this the cutoff snapped back to its 9500Hz
+    // default at each chunk boundary and slid down again — a sweep every
+    // time the music handed over, landing on section changes because chunks
+    // and sections are both whole numbers of phrases.
+    if (master.tone) {
+      const previous = sectionAt(Math.max(0, startBar - 1));
+      master.tone.frequency.value = 1400 + previous.tone * 8100;
+      applied.startCutoff = Math.round(master.tone.frequency.value);
+    }
     const light = bypass.has('light');
     // Texture goes between the voices and the master, so it colours the
     // whole record rather than any one instrument. Built back to front:

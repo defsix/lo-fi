@@ -53,6 +53,33 @@ const HANDOVER_LEAD = 0.12;
 // Playing, still-ringing, and free-to-load. See the note at the top.
 const ELEMENT_COUNT = 3;
 
+// Pausing a media element cuts the waveform wherever it happens to be, and
+// a waveform cut mid-cycle is a step change — which is what a click is. So
+// nothing here is ever stopped outright; it is taken to silence first.
+// Short enough not to feel like a fade, long enough to have no edge.
+const FADE_MS = 90;
+
+function fadeOut(element, done) {
+  if (!element || element.paused) { if (done) done(); return; }
+  const from = element.volume;
+  const started = performance.now();
+  const step = () => {
+    const t = (performance.now() - started) / FADE_MS;
+    if (t >= 1) {
+      element.volume = 0;
+      element.pause();
+      element.volume = from; // restored, so the next play is not silent
+      if (done) done();
+      return;
+    }
+    // Equal-power rather than linear: a linear ramp on amplitude is still
+    // audible as a dip in the middle.
+    element.volume = from * Math.cos((t * Math.PI) / 2);
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 export class LofiStream {
   constructor(options = {}) {
     this.bypass = new Set(options.bypass || []);
@@ -236,10 +263,13 @@ export class LofiStream {
       // Only if nothing has been staged onto it since: the next render may
       // already have claimed this element for the chunk after next.
       if (outgoing.src === url) {
-        outgoing.pause();
-        outgoing.removeAttribute('src');
-        outgoing.load();
-        URL.revokeObjectURL(url);
+        // The tail should be silent by now, but "should be" is how clicks
+        // get shipped.
+        fadeOut(outgoing, () => {
+          outgoing.removeAttribute('src');
+          outgoing.load();
+          URL.revokeObjectURL(url);
+        });
       }
     }, 4000);
 
@@ -275,11 +305,15 @@ export class LofiStream {
     clearTimeout(this.handoverTimer);
     for (const el of this.elements) {
       if (!el) continue;
-      el.pause();
+      el.onended = null;
       const url = el.src;
-      el.removeAttribute('src');
-      el.load();
-      if (url) URL.revokeObjectURL(url);
+      // Fade, then tear down — clearing src underneath a playing element is
+      // the same instant cut as pausing it.
+      fadeOut(el, () => {
+        el.removeAttribute('src');
+        el.load();
+        if (url) URL.revokeObjectURL(url);
+      });
     }
     if (this.queued && this.queued.url) URL.revokeObjectURL(this.queued.url);
     this.queued = null;
