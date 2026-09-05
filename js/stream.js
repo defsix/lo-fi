@@ -20,7 +20,7 @@
 // the tail exists to cover. Measured, that took the longest silence from
 // 100ms to 320ms.
 
-import { renderChunk, toWavBlob } from './render.js';
+import { renderChunk, toWavBlob, TAIL_SECONDS } from './render.js';
 import { createComposition } from './compose.js';
 import { readWords } from './words.js';
 
@@ -266,6 +266,16 @@ export class LofiStream {
     this.staged = next;
   }
 
+  // Release a chunk's audio once nothing can still be sounding it. Safe to
+  // call with anything, including a chunk already retired.
+  _retire(chunk) {
+    if (!chunk || !chunk.url) return;
+    const url = chunk.url;
+    chunk.url = null;
+    chunk.element = undefined;
+    setTimeout(() => URL.revokeObjectURL(url), (TAIL_SECONDS + 2) * 1000);
+  }
+
   async start() {
     if (this.playing) return;
     this.playing = true;
@@ -318,6 +328,7 @@ export class LofiStream {
     clearTimeout(this.handoverTimer);
     const outgoing = this._element(this.active);
     outgoing.onended = null;
+    const finished = this.current;
     const next = this.queue.shift() || (await this._renderAhead().catch(() => null));
     if (!this.playing || !next) return;
     if (this.queue[0] === next) this.queue.shift();
@@ -332,22 +343,25 @@ export class LofiStream {
     // element is free and load the chunk after this one onto it.
     this._stageNext();
 
-    // Let the old one finish its tail, then free it. Revoking the URL while
-    // it is still playing would cut the decay short.
-    const url = outgoing.src;
+    // Let the outgoing element finish its tail, then quieten it. This is
+    // about the element; freeing the audio is separate, below.
     setTimeout(() => {
-      // Only if nothing has been staged onto it since: the next render may
-      // already have claimed this element for the chunk after next.
-      if (outgoing.src === url) {
+      if (outgoing !== this._element(this.active) && !outgoing.paused) {
         // The tail should be silent by now, but "should be" is how clicks
         // get shipped.
-        fadeOut(outgoing, () => {
-          outgoing.removeAttribute('src');
-          outgoing.load();
-          URL.revokeObjectURL(url);
-        });
+        fadeOut(outgoing);
       }
-    }, 4000);
+    }, (TAIL_SECONDS + 1) * 1000);
+
+    // Free the chunk that just finished, once its tail has rung out.
+    //
+    // Tied to the chunk rather than to the element, which is the fix for a
+    // real leak: the old code revoked only if that element's src had not
+    // changed since, and with a ring of three the element is often
+    // re-staged first — so the check failed, the revoke was skipped, and
+    // several megabytes of WAV stayed in memory for the life of the tab.
+    // Over a couple of hours of listening that is hundreds of megabytes.
+    this._retire(finished);
 
     this._renderAhead();
   }
@@ -383,16 +397,15 @@ export class LofiStream {
     for (const el of this.elements) {
       if (!el) continue;
       el.onended = null;
-      const url = el.src;
       // Fade, then tear down — clearing src underneath a playing element is
       // the same instant cut as pausing it.
       fadeOut(el, () => {
         el.removeAttribute('src');
         el.load();
-        if (url) URL.revokeObjectURL(url);
       });
     }
-    for (const chunk of this.queue) if (chunk.url) URL.revokeObjectURL(chunk.url);
+    // Every chunk still holding audio, whether playing, staged or queued.
+    for (const chunk of [this.current, ...this.queue]) this._retire(chunk);
     this.queue = [];
     this.staged = null;
     this.current = null;
