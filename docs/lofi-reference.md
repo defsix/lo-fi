@@ -261,7 +261,13 @@ Everything above 1 kHz being empty is a defect, not a style.
 | Sidechain pump | done — `js/texture.js` |
 | Saturation | done — `js/texture.js` |
 | Sectional arrangement | done — `js/sections.js` |
-| Clean / lo-fi switch | done — `stream.html` |
+| Clean / lo-fi switch | dropped — levels are the work, not a control |
+| Modes: dorian, aeolian, mixolydian | done — `js/theory.js` |
+| m11, maj9, maj13, minMaj7, sus, 7#5 | done — `js/theory.js` |
+| Vamp and parallel progression shapes | done — `js/theory.js` |
+| Drum feels: brushed, boom bap, half-time | done — `js/drums.js` |
+| Named track palettes | done — `js/palette.js` |
+| Palette-specific instrument voices | not started |
 | Fixed voice pool, playback-sized buffer | done — see `docs/audio-performance.md` |
 
 ---

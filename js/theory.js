@@ -19,6 +19,20 @@ const ENHARMONIC = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 
 const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
 
+// Everything this engine wrote until now was in major, which is why every
+// track shared the same slightly polite cast whatever else changed.
+//
+// Dorian is the one that matters most: minor with a raised sixth, which
+// reads warm rather than dark, and it is the mode the genre leans on
+// hardest. Aeolian is plain natural minor, heavier. Mixolydian is major
+// with a flat seventh — brighter than dorian, less resolved than major.
+export const MODES = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+  aeolian: [0, 2, 3, 5, 7, 8, 10],
+  mixolydian: [0, 2, 4, 5, 7, 9, 10],
+};
+
 const KEYS = ['C', 'D', 'Eb', 'F', 'G', 'A', 'Bb'];
 
 // Semitones above the chord root. Rootless and spread: no root, guide
@@ -29,20 +43,98 @@ const VOICINGS = {
   m9: [3, 10, 14, 19], // b3 b7  9  5
   dom7: [4, 10, 14, 21], // 3 b7  9 13
   m7b5: [3, 10, 14, 18], // b3 b7  9 b5
+  // m11 is the chord this music was missing. Sources reach for it before
+  // anything else — the eleventh sits a fourth above the fifth and blurs
+  // the third, so the chord is minor without insisting on it.
+  m11: [3, 10, 17, 21], // b3 b7 11 13
+  maj9: [4, 11, 14, 16], // 3  7  9  3(8ve)
+  maj13: [4, 11, 14, 21], // 3  7  9 13
+  // Minor-major seventh: the seventh pulled up under a minor third. Used
+  // sparingly, as a chord to pass through rather than sit on.
+  mMaj7: [3, 11, 14, 19], // b3  7  9  5
+  // Suspended: no third at all, so it belongs to neither mode and can sit
+  // between two chords that disagree.
+  sus: [5, 10, 14, 19], //  4 b7  9  5
+  dom7s5: [4, 10, 14, 20], // 3 b7  9 #5
 };
 
-const QUALITY_SUFFIX = { maj7: 'maj7', m7: 'm7', m9: 'm9', dom7: '7', m7b5: 'm7b5' };
+const QUALITY_SUFFIX = {
+  maj7: 'maj7', m7: 'm7', m9: 'm9', dom7: '7', m7b5: 'm7b5',
+  m11: 'm11', maj9: 'maj9', maj13: 'maj13', mMaj7: 'mMaj7',
+  sus: 'sus', dom7s5: '7#5',
+};
 
 // Each chord is [semitones above the key root, quality, roman numeral].
-// Mostly ii-V-I family, plus one borrowed-chord progression for colour.
-const PROGRESSIONS = [
-  [[0, 'maj7', 'Imaj7'], [9, 'm7', 'vi7'], [2, 'm7', 'ii7'], [7, 'dom7', 'V7']],
-  [[2, 'm7', 'ii7'], [7, 'dom7', 'V7'], [0, 'maj7', 'Imaj7'], [0, 'maj7', 'Imaj7']],
-  [[9, 'm7', 'vi7'], [2, 'm7', 'ii7'], [7, 'dom7', 'V7'], [0, 'maj7', 'Imaj7']],
-  [[5, 'maj7', 'IVmaj7'], [4, 'm7', 'iii7'], [9, 'm7', 'vi7'], [7, 'dom7', 'V7']],
-  [[0, 'maj7', 'Imaj7'], [10, 'dom7', 'bVII7'], [5, 'maj7', 'IVmaj7'], [5, 'm7', 'iv7']],
-  [[0, 'maj7', 'Imaj7'], [5, 'maj7', 'IVmaj7'], [4, 'm7', 'iii7'], [9, 'm9', 'vi9']],
-];
+//
+// Grouped by family rather than listed flat, because the *shape* of a
+// progression is as much of its character as its chords. Everything here
+// used to be four-chord functional jazz in major — one flavour, played
+// every time. The genre also lives on two-chord vamps that go nowhere on
+// purpose, and on parallel motion that is not functional harmony at all.
+// Each entry carries the modes it belongs to. Without that, a palette could
+// declare itself dorian and be handed a major turnaround, which is how the
+// first version of this went: the mode was stated and then contradicted by
+// the chords, so it did nothing at all.
+//
+// MINOR covers dorian and aeolian; the difference between them is the sixth,
+// which these progressions mostly leave to the melody. MAJOR covers major
+// and mixolydian, where the flat seventh is likewise the melody's business.
+const MINOR = ['dorian', 'aeolian'];
+const MAJOR = ['major', 'mixolydian'];
+
+const PROGRESSION_FAMILIES = {
+  // ii-V-I and relatives. Resolved, jazz-school, bright.
+  turnaround: [
+    { modes: MAJOR, chords: [[0, 'maj9', 'Imaj9'], [9, 'm7', 'vi7'], [2, 'm7', 'ii7'], [7, 'dom7', 'V7']] },
+    { modes: MAJOR, chords: [[2, 'm7', 'ii7'], [7, 'dom7', 'V7'], [0, 'maj9', 'Imaj9'], [0, 'maj13', 'Imaj13']] },
+    { modes: MAJOR, chords: [[9, 'm7', 'vi7'], [2, 'm11', 'ii11'], [7, 'dom7', 'V7'], [0, 'maj7', 'Imaj7']] },
+    { modes: MAJOR, chords: [[5, 'maj7', 'IVmaj7'], [4, 'm7', 'iii7'], [9, 'm7', 'vi7'], [7, 'dom7', 'V7']] },
+    { modes: ['mixolydian'], chords: [[0, 'maj9', 'Imaj9'], [10, 'maj7', 'bVIImaj7'], [5, 'maj9', 'IVmaj9'], [0, 'dom7', 'I7']] },
+    // The minor turnaround: the same motion, arrived at from underneath.
+    { modes: MINOR, chords: [[2, 'm7b5', 'ii7b5'], [7, 'dom7s5', 'V7#5'], [0, 'm9', 'i9'], [0, 'm11', 'i11']] },
+    { modes: MINOR, chords: [[0, 'm11', 'i11'], [5, 'm7', 'iv7'], [10, 'dom7', 'bVII7'], [3, 'maj9', 'bIIImaj9']] },
+  ],
+
+  // Two chords, back and forth. The most common shape in the genre and the
+  // one this engine could not make: nothing resolves, so nothing has to.
+  vamp: [
+    { modes: MINOR, chords: [[0, 'm11', 'i11'], [5, 'm9', 'iv9']] },
+    { modes: MAJOR, chords: [[0, 'maj9', 'Imaj9'], [5, 'maj13', 'IVmaj13']] },
+    { modes: MINOR, chords: [[0, 'm11', 'i11'], [10, 'maj7', 'bVIImaj7']] },
+    { modes: MINOR, chords: [[0, 'm9', 'i9'], [3, 'maj9', 'bIIImaj9']] },
+    { modes: MAJOR, chords: [[0, 'sus', 'Isus'], [5, 'maj9', 'IVmaj9']] },
+    // Mixolydian's own sound: the flat seventh as a chord, not just a note
+    // in the scale. Without this it shared major's harmony entirely and the
+    // mode only reached the melody.
+    { modes: ['mixolydian'], chords: [[0, 'dom7', 'I7'], [10, 'maj9', 'bVIImaj9']] },
+    // Dorian's own sound: the major IV under a minor i, which is the raised
+    // sixth doing the work that makes dorian warm rather than dark.
+    { modes: ['dorian'], chords: [[0, 'm11', 'i11'], [5, 'dom7', 'IV7']] },
+  ],
+
+  // Planing: the same chord shape slid up or down. Not functional harmony —
+  // the ear hears colour moving rather than a key being established.
+  parallel: [
+    { modes: MINOR, chords: [[0, 'm11', 'i11'], [1, 'm11', 'bII11'], [0, 'm11', 'i11'], [10, 'm11', 'bVII11']] },
+    { modes: MAJOR, chords: [[0, 'maj9', 'Imaj9'], [2, 'maj9', 'IImaj9'], [5, 'maj9', 'IVmaj9'], [2, 'maj9', 'IImaj9']] },
+    { modes: MINOR, chords: [[0, 'm9', 'i9'], [3, 'm9', 'bIII9'], [5, 'm9', 'iv9'], [3, 'm9', 'bIII9']] },
+    { modes: MINOR, chords: [[0, 'm11', 'i11'], [3, 'm11', 'bIII11'], [5, 'm11', 'iv11'], [0, 'm11', 'i11']] },
+  ],
+
+  // Inward, minor-centred, with the borrowed and altered chords the sources
+  // reach for when they want a progression to ache slightly.
+  brooding: [
+    { modes: MINOR, chords: [[0, 'm11', 'i11'], [5, 'm9', 'iv9'], [0, 'm11', 'i11'], [7, 'dom7s5', 'V7#5']] },
+    { modes: MINOR, chords: [[0, 'm9', 'i9'], [8, 'maj7', 'bVImaj7'], [3, 'maj9', 'bIIImaj9'], [0, 'mMaj7', 'imMaj7']] },
+    { modes: MINOR, chords: [[0, 'm7', 'i7'], [10, 'dom7', 'bVII7'], [8, 'maj7', 'bVImaj7'], [7, 'dom7', 'V7']] },
+    { modes: MAJOR, chords: [[9, 'm11', 'vi11'], [5, 'maj7', 'IVmaj7'], [0, 'maj7', 'Imaj7'], [7, 'sus', 'Vsus']] },
+  ],
+};
+
+export const PROGRESSION_FAMILY_NAMES = Object.keys(PROGRESSION_FAMILIES);
+
+const ALL = Object.values(PROGRESSION_FAMILIES).flat();
+const PROGRESSIONS = ALL.map((entry) => entry.chords);
 
 // Where the comping voicings sit. The bass has its own register, set per
 // chord below.
@@ -78,6 +170,19 @@ export function pickProgressionFor(melancholy, rng = Math.random) {
 
 export function pickProgression(rng = Math.random) {
   return PROGRESSIONS[Math.floor(rng() * PROGRESSIONS.length)];
+}
+
+// A progression from a named family, in a given mode. The mode filter is
+// what keeps a palette's stated identity and its actual chords in
+// agreement; without it a dorian track gets a major turnaround and the mode
+// is decoration.
+export function pickProgressionFromFamily(family, rng = Math.random, mode = 'major') {
+  const list = PROGRESSION_FAMILIES[family] || ALL;
+  const fitting = list.filter((entry) => entry.modes.includes(mode));
+  // Every family has something for every mode, but fall back to the family
+  // rather than throwing if that ever stops being true.
+  const from = fitting.length ? fitting : list;
+  return from[Math.floor(rng() * from.length)].chords;
 }
 
 // "Dm7", "G7", "Cmaj7" — the chord as a player would name it.
@@ -118,6 +223,14 @@ const CORE_TONES = {
   m9: [0, 3, 7, 10],
   dom7: [0, 4, 7, 10],
   m7b5: [0, 3, 6, 10],
+  m11: [0, 3, 7, 10],
+  maj9: [0, 4, 7, 11],
+  maj13: [0, 4, 7, 11],
+  mMaj7: [0, 3, 7, 11],
+  // No third, so there is no minor/major question to answer; the fourth and
+  // flat seventh decide it.
+  sus: [0, 5, 7, 10],
+  dom7s5: [0, 4, 8, 10],
 };
 
 function spellsWithFlats(keyName, semitonesAboveKey, quality) {
@@ -159,11 +272,12 @@ export function buildChords(keyName, progression) {
 
 // The key's major scale across `octaves`, as absolute semitones — the
 // melody draws from this so every note belongs to the key.
-export function scaleTones(keyName, fromOctave, octaves = 2) {
+export function scaleTones(keyName, fromOctave, octaves = 2, mode = 'major') {
   const root = keyRootAbsolute(keyName, fromOctave);
+  const steps = MODES[mode] || MAJOR_SCALE;
   const tones = [];
   for (let o = 0; o < octaves; o++) {
-    for (const step of MAJOR_SCALE) tones.push(root + o * 12 + step);
+    for (const step of steps) tones.push(root + o * 12 + step);
   }
   return tones;
 }

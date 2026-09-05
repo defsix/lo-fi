@@ -9,12 +9,13 @@
 // A plan is what a bar contains. Events are that plan flattened into notes
 // with times, groove included. Neither touches an audio node.
 
-import { pickKey, pickProgression, pickProgressionFor, buildChords } from './theory.js';
+import { pickKey, pickProgression, pickProgressionFor, pickProgressionFromFamily, buildChords } from './theory.js';
 import { compForBar, bassForBar } from './arrange.js';
 import { makeMotif, realiseMotif } from './melody.js';
 import { drumsForBar } from './drums.js';
 import { grooveOffset, accent } from './groove.js';
 import { sectionAt, isCycleStart } from './sections.js';
+import { pickPalette } from './palette.js';
 
 export const BARS_PER_PHRASE = 4;
 export const STEPS_PER_BAR = 16;
@@ -26,16 +27,32 @@ export const STEPS_PER_BAR = 16;
 //
 // Progressions are ordered from brightest to most inward in theory.js, so
 // melancholy selects across that range rather than pretending to compose.
-export function createComposition(sense = null, rng = Math.random) {
+export function createComposition(sense = null, rng = Math.random, palette = null) {
+  // The palette is the track's identity — mode, tempo, harmonic shape,
+  // voices, drum feel — chosen once and held. Everything below varies
+  // inside it rather than across it.
+  const chosen = palette || pickPalette(sense, rng);
   const key = pickKey(rng);
-  const progression = sense ? pickProgressionFor(sense.melancholy, rng) : pickProgression(rng);
-  return { key, chords: buildChords(key, progression), motif: makeMotif(rng), sense };
+  const progression = pickProgressionFromFamily(chosen.family, rng, chosen.mode);
+  return {
+    key,
+    palette: chosen,
+    mode: chosen.mode,
+    chords: buildChords(key, progression),
+    motif: makeMotif(rng),
+    sense,
+  };
 }
 
 // New material, same place in the arrangement.
+// New material at a cycle boundary — but the same identity. A stream that
+// changed instruments and tempo every three minutes would not be a track,
+// it would be a playlist.
 export function renewMaterial(state, rng = Math.random) {
   state.key = pickKey(rng);
-  const progression = state.sense ? pickProgressionFor(state.sense.melancholy, rng) : pickProgression(rng);
+  const progression = state.palette
+    ? pickProgressionFromFamily(state.palette.family, rng, state.palette.mode)
+    : (state.sense ? pickProgressionFor(state.sense.melancholy, rng) : pickProgression(rng));
   state.chords = buildChords(state.key, progression);
   state.motif = makeMotif(rng);
   return state;
@@ -76,6 +93,7 @@ export function planBar(state, bar, rng = Math.random) {
   // Energy leans on the section's own density rather than replacing it, so
   // the arrangement still shapes the piece and the words tint it.
   const energy = state.sense ? state.sense.energy : 0;
+  const feel = state.palette ? state.palette.drums : 'light';
   const density = Math.max(0.2, Math.min(1, section.density * (1 + energy * 0.35)));
   const index = bar % state.chords.length;
   const chord = state.chords[index];
@@ -97,10 +115,10 @@ export function planBar(state, bar, rng = Math.random) {
     // The melody sits out sparse sections entirely, and thins in the rest.
     melody:
       section.voices.lead && rng() < density
-        ? realiseMotif(state.motif, chord, state.key, barInPhrase, rng)
+        ? realiseMotif(state.motif, chord, state.key, barInPhrase, rng, state.mode)
         : [],
-    drums: section.voices.drums && (energy > -0.75 || section.density > 0.5)
-      ? drumsForBar(section.isLastBar ? 3 : barInPhrase, rng)
+    drums: section.voices.drums && feel !== 'none' && (energy > -0.75 || section.density > 0.5)
+      ? drumsForBar(section.isLastBar ? 3 : barInPhrase, rng, feel)
       : { kick: [], snare: [], ghosts: [], hats: [], fill: [] },
   };
 }

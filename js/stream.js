@@ -20,7 +20,7 @@
 // the tail exists to cover. Measured, that took the longest silence from
 // 100ms to 320ms.
 
-import { renderChunk, toWavBlob, SECONDS_PER_BAR } from './render.js';
+import { renderChunk, toWavBlob } from './render.js';
 import { createComposition } from './compose.js';
 import { readWords } from './words.js';
 
@@ -139,6 +139,7 @@ export class LofiStream {
     this.reading = readWords(options.words);
     this.sense = this.reading ? this.reading.sense : null;
     this.state = createComposition(this.sense);
+    this.palette = this.state.palette;
     this.nextBar = 0;
     this.playing = false;
     this.volume = 0.8;
@@ -284,7 +285,19 @@ export class LofiStream {
     el.currentTime = 0;
     this.current = chunk;
     await el.play().catch(() => { /* a stop raced the play */ });
-    if (this.onChunk) this.onChunk(chunk);
+
+    // The page's callback must never be able to stop the music. It did:
+    // a readout element renamed in the HTML but still referenced here threw
+    // inside onChunk, the exception propagated out of _play, and the
+    // handover chain died with it — one chunk played and then silence.
+    // Drawing a readout is not worth a stream.
+    if (this.onChunk) {
+      try {
+        this.onChunk(chunk);
+      } catch (err) {
+        this._say('readout failed: ' + (err && err.message ? err.message : err));
+      }
+    }
 
     // Hand over at the end of this chunk's music, leaving its tail ringing.
     clearTimeout(this.handoverTimer);
@@ -353,6 +366,7 @@ export class LofiStream {
     this.reading = readWords(words);
     this.sense = this.reading ? this.reading.sense : null;
     this.state = createComposition(this.sense);
+    this.palette = this.state.palette;
     this.nextBar = 0;
     this.nextChunkBars = this.fixedBars || FIRST_CHUNK_BARS;
     return this.reading;

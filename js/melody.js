@@ -71,11 +71,13 @@ function snapToChord(pitch, chord) {
 
 // Realises the motif against one chord. `variation` walks 0..3 through the
 // phrase: state it, repeat it changed, lift it, then thin it out.
-export function realiseMotif(motif, chord, keyName, variation, rng = Math.random) {
+export function realiseMotif(motif, chord, keyName, variation, rng = Math.random, mode = 'major') {
   // Bar four is mostly rest — the line has to breathe or it becomes wallpaper.
   if (variation === 3 && rng() < 0.7) return [];
 
-  const scale = scaleTones(keyName, MELODY_OCTAVE, 2);
+  // The melody has to be in the same mode as the harmony, or a dorian
+  // vamp gets a major-scale tune over it and the mode does nothing.
+  const scale = scaleTones(keyName, MELODY_OCTAVE, 2, mode);
   const lift = variation === 2 ? 1 : 0;
   const notes = [];
 

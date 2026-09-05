@@ -21,8 +21,12 @@ import { planBar, eventsForBar } from './compose.js';
 import { sectionAt } from './sections.js';
 import { createVinyl, createTapeWobble, createSaturation, createPump } from './texture.js';
 
+// The default when no palette says otherwise. Palettes set their own, which
+// is the point: a fixed tempo was one of the things making every track the
+// same regardless of what else changed.
 export const BPM = 74;
-export const SECONDS_PER_BAR = (60 / BPM) * 4;
+export const secondsPerBarAt = (bpm) => (60 / bpm) * 4;
+export const SECONDS_PER_BAR = secondsPerBarAt(BPM);
 
 // Rendered past the end of the music so reverb and release tails complete
 // rather than being cut off mid-decay. The player overlaps this tail with
@@ -47,7 +51,10 @@ function fire(voice, event) {
  * choice rather than a degraded mode, and it is also the cheaper render.
  */
 export async function renderChunk({ state, startBar, bars, bypass = new Set(), texture = 1, rng = Math.random }) {
-  const musicSeconds = bars * SECONDS_PER_BAR;
+  const palette = state.palette || null;
+  const bpm = palette ? palette.bpm : BPM;
+  const secondsPerBar = secondsPerBarAt(bpm);
+  const musicSeconds = bars * secondsPerBar;
   const dirt = Math.max(0, Math.min(1, texture));
 
   // Decide the whole chunk before rendering. planBar advances the
@@ -64,8 +71,9 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
   for (let i = 0; i < bars; i++) plans.push(planBar(state, startBar + i, rng));
 
   const buffer = await Tone.Offline(async () => {
-    Tone.getTransport().bpm.value = BPM;
+    Tone.getTransport().bpm.value = bpm;
     const master = createMaster(bypass);
+    const paletteTone = palette ? palette.tone : 1;
 
     // Start the filter where the previous chunk left it. Every chunk builds
     // a fresh master, so without this the cutoff snapped back to its 9500Hz
@@ -74,7 +82,7 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
     // and sections are both whole numbers of phrases.
     if (master.tone) {
       const previous = sectionAt(Math.max(0, startBar - 1));
-      master.tone.frequency.value = 1400 + previous.tone * 8100;
+      master.tone.frequency.value = (1400 + previous.tone * 8100) * paletteTone;
       applied.startCutoff = Math.round(master.tone.frequency.value);
     }
     const light = bypass.has('light');
@@ -102,7 +110,11 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
     // stays the same room and the words only decide how far into it we are.
     const sense = state.sense;
     const space = sense ? sense.space : 0;
-    const reverbSend = new Tone.Gain(Math.max(0.35, Math.min(1.8, 1 + space * 0.7))).connect(master.send);
+    // The palette sets the room; the words move within it.
+    const paletteReverb = palette ? palette.reverb : 1;
+    const reverbSend = new Tone.Gain(
+      Math.max(0.3, Math.min(2.2, paletteReverb * (1 + space * 0.5)))
+    ).connect(master.send);
 
     // Brightness on the voices themselves. Measured on an isolated chord
     // this spans about 3.8x of the energy above 1kHz; in a full mix the
@@ -113,6 +125,9 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
     applied.toneScale = toneScale;
     applied.warmth = warmth;
     applied.space = space;
+    applied.bpm = bpm;
+    applied.paletteTone = paletteTone;
+    applied.palette = palette ? palette.name : null;
 
     const voices = {
       keys: light ? null : createKeys(target, reverbSend, bypass, toneScale),
@@ -127,18 +142,18 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
 
     for (let i = 0; i < bars; i++) {
       const plan = plans[i];
-      const barStart = i * SECONDS_PER_BAR;
+      const barStart = i * secondsPerBar;
 
       // The section filter, moved as the arrangement moves. Offline there is
       // no draw loop to fight, so it is simply ramped in place.
       if (master.tone) {
         // The master filter still follows the arrangement; warmth is applied
         // on the voices instead, where it can be heard.
-        const cutoff = 1400 + plan.section.tone * 8100;
+        const cutoff = (1400 + plan.section.tone * 8100) * paletteTone;
         master.tone.frequency.rampTo(Math.max(900, Math.min(12000, cutoff)), 2.4, barStart);
       }
 
-      const events = eventsForBar(plan, SECONDS_PER_BAR, rng);
+      const events = eventsForBar(plan, secondsPerBar, rng);
       for (const [name, list] of Object.entries(events)) {
         const voice = targets[name];
         if (!voice || bypass.has(name)) continue;
@@ -148,13 +163,13 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
       // The record's own surface, and the mix breathing against the kick.
       // Both scheduled bar by bar, because an offline render has no timer to
       // run them from.
-      if (vinyl) vinyl.scheduleBar(barStart, SECONDS_PER_BAR, rng);
+      if (vinyl) vinyl.scheduleBar(barStart, secondsPerBar, rng);
       if (pump) for (const kick of events.kick) pump.duck(barStart + kick.time);
     }
     Tone.getTransport().start();
   }, musicSeconds + TAIL_SECONDS);
 
-  return { buffer, startBar, bars, plans, musicSeconds, applied };
+  return { buffer, startBar, bars, plans, musicSeconds, applied, palette, bpm };
 }
 
 /**

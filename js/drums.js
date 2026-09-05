@@ -82,19 +82,49 @@ function pick(list, rng) {
 }
 
 // `barInPhrase` runs 0..3; the fourth bar turns the phrase over.
-export function drumsForBar(barInPhrase, rng = Math.random) {
+// Drum feels. One kit, played differently — which is most of what makes two
+// lo-fi tracks sound like different records rather than the same one with
+// different chords.
+//
+//   light     the default: eighths on the hat, backbeat, ghosts
+//   brushed   quiet and busy, sixteenths, almost no kick weight
+//   boombap   harder and simpler, the kick and snare doing the talking
+//   halftime  the backbeat on 3 instead of 2 and 4, so the bar feels twice
+//             as long and everything sits further back
+//   none      handled by the caller; nothing is scheduled at all
+const FEELS = {
+  light: { hatStep: 2, hatChance: 0.9, ghostChance: 0.35, fillChance: 0.7, halfTime: false, doubles: true },
+  brushed: { hatStep: 1, hatChance: 0.55, ghostChance: 0.6, fillChance: 0.45, halfTime: false, doubles: false },
+  boombap: { hatStep: 2, hatChance: 1, ghostChance: 0.15, fillChance: 0.8, halfTime: false, doubles: false },
+  halftime: { hatStep: 4, hatChance: 0.85, ghostChance: 0.25, fillChance: 0.5, halfTime: true, doubles: false },
+};
+
+// Half-time puts the snare on beat 3 alone. The bar is the same length; it
+// simply feels twice as long, which is the point.
+const HALFTIME_SNARE = [8];
+
+export function drumsForBar(barInPhrase, rng = Math.random, feel = 'light') {
+  const shape = FEELS[feel] || FEELS.light;
   const kick = pick(KICK_PATTERNS, rng);
-  const ghosts = GHOST_STEPS.filter(() => rng() < 0.35);
-  const fill = barInPhrase === 3 && rng() < 0.7 ? pick(FILLS, rng) : [];
+  const ghosts = GHOST_STEPS.filter(() => rng() < shape.ghostChance);
+  const fill = barInPhrase === 3 && rng() < shape.fillChance ? pick(FILLS, rng) : [];
 
-  // Hats on eighths, dropping the occasional one so the pattern breathes.
+  // Hats at this feel's subdivision, dropping the occasional one so the
+  // pattern breathes.
   const hats = [];
-  for (let step = 0; step < STEPS_PER_BAR; step += 2) {
-    if (rng() < 0.9) hats.push(step);
+  for (let step = 0; step < STEPS_PER_BAR; step += shape.hatStep) {
+    if (rng() < shape.hatChance) hats.push(step);
   }
-  // A few doubled-up sixteenths, the way a player fills a bar.
-  if (rng() < 0.4) hats.push(13);
-  if (rng() < 0.3) hats.push(7);
+  // A few doubled-up sixteenths, the way a player fills a bar. Not in the
+  // feels that are meant to stay out of the way.
+  if (shape.doubles) {
+    if (rng() < 0.4) hats.push(13);
+    if (rng() < 0.3) hats.push(7);
+  }
 
-  return { kick, snare: SNARE_STEPS, ghosts, hats, fill };
+  const snare = shape.halfTime ? HALFTIME_SNARE : SNARE_STEPS;
+  // Half-time drops the second kick too, or it fights its own backbeat.
+  const kicks = shape.halfTime ? kick.filter((step) => step < 8) : kick;
+
+  return { kick: kicks, snare, ghosts, hats, fill };
 }

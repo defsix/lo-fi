@@ -55,6 +55,7 @@
   .readout dd { margin:8px 0 0; font-family:var(--mono); font-size:15px;
                 font-variant-numeric:tabular-nums; }
   .readout dd.progression { color:var(--amber); font-size:13px; }
+  .readout dd.palette { color:var(--amber); font-size:13px; }
   .layers { margin:0; font-family:var(--mono); font-size:11.5px; line-height:1.9; color:var(--faint); }
   .layers b { color:var(--dim); font-weight:400; }
   @media (max-width:520px) { .readout { grid-template-columns:repeat(2,1fr); } }
@@ -88,10 +89,11 @@
   <p class="status" id="status">press play — a few bars are written, then it plays while writing more</p>
 
   <dl class="readout">
+    <div><dt>palette</dt><dd class="palette" id="palette">&mdash;</dd></div>
     <div><dt>key</dt><dd id="key">&mdash;</dd></div>
     <div><dt>progression</dt><dd class="progression" id="progression">&mdash;</dd></div>
     <div><dt>section</dt><dd id="section">&mdash;</dd></div>
-    <div><dt>written</dt><dd id="ahead">&mdash;</dd></div>
+    <div><dt>feel</dt><dd id="feel">&mdash;</dd></div>
   </dl>
 
   <p class="layers">
@@ -99,6 +101,7 @@
     <b>lead</b> &mdash; a motif stated, answered, lifted, then left to breathe<br>
     <b>bass</b> &mdash; roots, fifths and a step that leads into the next chord<br>
     <b>drums</b> &mdash; 74 bpm, swung sixteenths, snare behind the beat, ghosts and fills<br>
+    every track picks a palette &mdash; its mode, tempo, harmony and drum feel &mdash; and holds it.<br>
     written ahead of itself, faster than it plays, so it keeps going with the screen off.<br>
     nothing is sampled. it is composed on this device.
   </p>
@@ -142,16 +145,21 @@ stream.onStatus = (text) => setStatus(text);
 
 stream.onChunk = (chunk) => {
   const first = chunk.plans[0];
+  const palette = chunk.palette;
+  if (palette) {
+    $('palette').textContent = palette.name;
+    // Tempo and mode are the identity; the blurb says what it is in words.
+    $('feel').textContent = Math.round(chunk.bpm) + ' bpm · ' + palette.mode;
+  }
   $('key').textContent = first.key;
   $('progression').textContent = first.chord ? chordLabel(first.chord, first.key) : '—';
   $('section').textContent = first.section.name;
-  $('ahead').textContent = Math.round(chunk.musicSeconds) + 's chunks';
   setStatus('playing — written on this device, a minute at a time');
   // Lock-screen controls: this is a real media element, so the platform
   // offers them, and they should do what they say.
   if ('mediaSession' in navigator && window.MediaMetadata) {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: first.key + ' · ' + first.section.name,
+      title: (palette ? palette.name : first.key) + ' · ' + first.section.name,
       artist: '076 lofi',
       album: 'generated on this device',
     });
@@ -217,6 +225,7 @@ function stop() {
   setPlayingUI(false);
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   $('section').textContent = '—';
+  $('palette').textContent = '—';
 }
 
 playBtn.addEventListener('click', () => (stream.isPlaying ? stop() : start()));
