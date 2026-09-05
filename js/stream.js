@@ -53,6 +53,19 @@ const HANDOVER_LEAD = 0.12;
 // Playing, still-ringing, and free-to-load. See the note at the top.
 const ELEMENT_COUNT = 3;
 
+// How many rendered chunks to keep in reserve.
+//
+// One was enough while the tab was in front, and not enough behind it: a
+// backgrounded tab is given much less CPU, so a render that comfortably
+// beat playback in the foreground can miss its handover, and a handover
+// with nothing to hand to is the stutter. Two chunks means a render can
+// take an entire extra chunk's playback and still not be late.
+//
+// The cost is memory — a chunk is several megabytes of WAV — and a texture
+// or word change taking one chunk longer to be heard. Both are cheap
+// against the music stopping.
+const QUEUE_DEPTH = 2;
+
 // Pausing a media element cuts the waveform wherever it happens to be, and
 // a waveform cut mid-cycle is a step change — which is what a click is. So
 // nothing here is ever stopped outright; it is taken to silence first.
@@ -62,22 +75,47 @@ const FADE_MS = 90;
 function fadeOut(element, done) {
   if (!element || element.paused) { if (done) done(); return; }
   const from = element.volume;
+
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    element.volume = 0;
+    element.pause();
+    element.volume = from; // restored, so the next play is not silent
+    if (done) done();
+  };
+
+  // No fade while the page is hidden, and this is the important part: a
+  // hidden page does not run requestAnimationFrame at all. Driving the fade
+  // from rAF meant that when the tab lost focus the fade never finished, so
+  // the outgoing element was never paused and never had its source cleared
+  // — it kept playing underneath the next chunk. Two chunks sounding at
+  // once is what that was heard as, a stutter between segments whenever the
+  // site was not in front.
+  //
+  // Nobody is looking at a hidden tab, and a click there is a far smaller
+  // problem than two chunks of music overlapping, so it stops at once.
+  if (typeof document !== 'undefined' && document.hidden) {
+    finish();
+    return;
+  }
+
   const started = performance.now();
   const step = () => {
     const t = (performance.now() - started) / FADE_MS;
-    if (t >= 1) {
-      element.volume = 0;
-      element.pause();
-      element.volume = from; // restored, so the next play is not silent
-      if (done) done();
-      return;
-    }
+    if (t >= 1) { finish(); return; }
     // Equal-power rather than linear: a linear ramp on amplitude is still
     // audible as a dip in the middle.
     element.volume = from * Math.cos((t * Math.PI) / 2);
     requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
+
+  // And a deadline, because the page can be hidden *during* a fade, which
+  // stops rAF mid-way and would strand it just the same. A timer keeps
+  // running when hidden — throttled, but it runs.
+  setTimeout(finish, FADE_MS * 4);
 }
 
 export class LofiStream {
@@ -110,7 +148,8 @@ export class LofiStream {
     this.elements = [];
     this.active = 0;
     this.pending = null;   // a render in flight
-    this.queued = null;    // a rendered chunk waiting its turn
+    this.queue = [];       // rendered chunks waiting their turn
+    this.staged = null;    // the queued chunk already loaded onto an element
     this.current = null;   // what is sounding now
     this.handoverTimer = null;
 
@@ -155,7 +194,7 @@ export class LofiStream {
   }
 
   _renderAhead() {
-    if (this.pending || this.queued) return this.pending;
+    if (this.pending || this.queue.length >= QUEUE_DEPTH) return this.pending;
     const startBar = this.nextBar;
     const bars = this.nextChunkBars;
     this.nextBar += bars;
@@ -177,11 +216,13 @@ export class LofiStream {
         chunk.url = URL.createObjectURL(toWavBlob(chunk.buffer));
         // The decoded buffer is megabytes and is not needed once encoded.
         chunk.buffer = null;
-        this.queued = chunk;
+        this.queue.push(chunk);
         this.pending = null;
-        // Load it onto the idle element straight away, so the browser has a
-        // whole chunk's playback to get it ready in.
-        if (this.current) this._stage((this.active + 1) % ELEMENT_COUNT, chunk);
+        // Load whatever plays next onto the free element straight away, so
+        // the browser has a whole chunk's playback to get it ready in.
+        this._stageNext();
+        // Keep filling until the reserve is full.
+        this._renderAhead();
         return chunk;
       })
       .catch((err) => {
@@ -207,14 +248,31 @@ export class LofiStream {
     return el;
   }
 
+  // Put the chunk that plays next onto the free element. The ring is
+  // playing / still-ringing / free, so the free one is always the one after
+  // the playing element — never active+2, which is the element still
+  // sounding the previous chunk's tail.
+  //
+  // At most one chunk is ever staged. A render finishing during a handover
+  // would otherwise load the chunk after next onto the element the handover
+  // is about to play from, overwriting it a millisecond before it sounds —
+  // which is exactly what the staging log caught.
+  _stageNext() {
+    if (this.staged || !this.current) return;
+    const next = this.queue[0];
+    if (!next) return;
+    this._stage((this.active + 1) % ELEMENT_COUNT, next);
+    this.staged = next;
+  }
+
   async start() {
     if (this.playing) return;
     this.playing = true;
     this._say('writing the first few bars…');
 
-    const first = this.queued || (await this._renderAhead());
+    const first = this.queue.shift() || (await this._renderAhead());
     if (!this.playing) return; // stopped while rendering
-    this.queued = null;
+    if (this.queue[0] === first) this.queue.shift();
     if (first.element === undefined) this._stage(this.active, first);
     await this._play(first);
     this._renderAhead(); // get ahead immediately
@@ -247,14 +305,19 @@ export class LofiStream {
     clearTimeout(this.handoverTimer);
     const outgoing = this._element(this.active);
     outgoing.onended = null;
-    const next = this.queued || (await this._renderAhead().catch(() => null));
+    const next = this.queue.shift() || (await this._renderAhead().catch(() => null));
     if (!this.playing || !next) return;
-    this.queued = null;
+    if (this.queue[0] === next) this.queue.shift();
+    if (this.staged === next) this.staged = null;
 
     // Move to the next element in the ring; the outgoing one keeps sounding
     // its tail on the element we just left.
     this.active = next.element !== undefined ? next.element : (this.active + 1) % ELEMENT_COUNT;
     await this._play(next);
+
+    // Only now, with `active` moved on, is it safe to work out which
+    // element is free and load the chunk after this one onto it.
+    this._stageNext();
 
     // Let the old one finish its tail, then free it. Revoking the URL while
     // it is still playing would cut the decay short.
@@ -315,8 +378,9 @@ export class LofiStream {
         if (url) URL.revokeObjectURL(url);
       });
     }
-    if (this.queued && this.queued.url) URL.revokeObjectURL(this.queued.url);
-    this.queued = null;
+    for (const chunk of this.queue) if (chunk.url) URL.revokeObjectURL(chunk.url);
+    this.queue = [];
+    this.staged = null;
     this.current = null;
     this._say('stopped');
   }
