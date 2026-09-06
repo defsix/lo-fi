@@ -129,10 +129,14 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
     applied.paletteTone = paletteTone;
     applied.palette = palette ? palette.name : null;
 
+    // The palette's instruments. Without this every identity played the
+    // same FM Rhodes, so six palettes announced themselves with one sound.
+    const voicing = (palette && palette.voices) || {};
+    applied.voices = voicing;
     const voices = {
-      keys: light ? null : createKeys(target, reverbSend, bypass, toneScale),
-      lead: light ? null : createLead(target, reverbSend, bypass, toneScale),
-      bass: createBass(target),
+      keys: light ? null : createKeys(target, reverbSend, bypass, toneScale, voicing.keys),
+      lead: light ? null : createLead(target, reverbSend, bypass, toneScale, voicing.lead),
+      bass: createBass(target, voicing.bass),
     };
     const kit = createDrumKit(target);
     const targets = {

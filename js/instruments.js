@@ -46,13 +46,89 @@ function pinVoices(poly) {
   return poly;
 }
 
+
+// --- timbres -------------------------------------------------------------
+//
+// The palettes name voices — rhodes, celeste, vibes, pluck — and until now
+// every one of them got the same FM Rhodes, so six identities shared one
+// sound. That is the last place the sameness was living: mode, tempo and
+// drums could all differ and the track still announced itself with the same
+// instrument in the first bar.
+//
+// These are all FM, because FM is what this engine already renders quickly
+// and what gives a struck-metal character cheaply. What separates them is
+// where the modulator sits relative to the carrier (harmonicity), how hard
+// it pushes (modulation index), and how the note decays.
+//
+//   rhodes    harmonicity 2, gentle index, long sustain — the electric
+//             piano tine: a soft bell that holds.
+//   celeste   harmonicity 3.01 and a fast-decaying modulator. The slight
+//             detune from a whole number is what stops it ringing like a
+//             pure bell and makes it read as a struck metal bar.
+//   vibes     harmonicity 4, low index, very long decay, no sustain — the
+//             note blooms and falls away rather than being held.
+//   pluck     harmonicity 1, a short sharp modulation burst, quick decay —
+//             a string sound rather than a struck one.
+const TIMBRES = {
+  rhodes: {
+    harmonicity: 2,
+    modulationIndex: 2.4,
+    oscillator: { type: 'sine' },
+    modulation: { type: 'sine' },
+    envelope: { attack: 0.012, decay: 0.9, sustain: 0.28, release: 1.8 },
+    modulationEnvelope: { attack: 0.008, decay: 0.35, sustain: 0.1, release: 0.8 },
+    cutoff: 3200,
+    volume: -13,
+  },
+  celeste: {
+    harmonicity: 3.01,
+    // Measured: at an index of 3.2 this was spectrally indistinguishable
+    // from the Rhodes — 366Hz against 390Hz of spectral centroid. The
+    // harmonicity places the sidebands but the index decides whether they
+    // are loud enough to be a timbre or just arithmetic.
+    modulationIndex: 7.5,
+    oscillator: { type: 'sine' },
+    modulation: { type: 'sine' },
+    envelope: { attack: 0.004, decay: 1.4, sustain: 0.06, release: 1.6 },
+    modulationEnvelope: { attack: 0.002, decay: 0.18, sustain: 0, release: 0.4 },
+    cutoff: 4200,
+    volume: -14,
+  },
+  vibes: {
+    harmonicity: 4,
+    // Same correction, more gently: a vibraphone is a purer sound than a
+    // celeste, so it takes less, but 1.4 was not enough to be anything.
+    modulationIndex: 4,
+    oscillator: { type: 'sine' },
+    modulation: { type: 'sine' },
+    envelope: { attack: 0.006, decay: 2.2, sustain: 0.04, release: 2.4 },
+    modulationEnvelope: { attack: 0.004, decay: 0.5, sustain: 0.02, release: 0.9 },
+    cutoff: 3600,
+    volume: -13,
+  },
+  pluck: {
+    harmonicity: 1,
+    modulationIndex: 4.5,
+    oscillator: { type: 'triangle' },
+    modulation: { type: 'sine' },
+    envelope: { attack: 0.003, decay: 0.55, sustain: 0.08, release: 0.7 },
+    modulationEnvelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.2 },
+    cutoff: 3000,
+    volume: -12,
+  },
+};
+
+function timbre(name) {
+  return TIMBRES[name] || TIMBRES.rhodes;
+}
+
 export function createLightKeys(bus) {
   const filter = new Tone.Filter({ frequency: 3200, type: 'lowpass', rolloff: -12 }).connect(bus);
   const keys = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.012, decay: 0.9, sustain: 0.22, release: 1.4 },
   }).connect(filter);
-  keys.volume.value = -13;
+  keys.volume.value = t.volume;
   keys.maxPolyphony = 8;
   // The build for devices that cannot keep up is the one that can least
   // afford to build voices mid-track.
@@ -84,9 +160,10 @@ export function createLightLead(bus) {
 // there is nothing above 1.6kHz for a filter to either keep or cut. The
 // index is what *creates* them, so it is the only real brightness control
 // this voice has. The filter still moves, a little, to follow.
-export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1) {
+export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes') {
+  const t = timbre(voice);
   const filter = new Tone.Filter({
-    frequency: 3200 * Math.pow(toneScale, 0.5),
+    frequency: t.cutoff * Math.pow(toneScale, 0.5),
     type: 'lowpass',
     rolloff: -24,
   }).connect(bus);
@@ -98,19 +175,19 @@ export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1) {
     : new Tone.Tremolo({ frequency: 2.4, depth: 0.18, wet: 0.25 }).connect(chorus).start();
 
   const keys = new Tone.PolySynth(Tone.FMSynth, {
-    harmonicity: 2,
-    modulationIndex: 2.4 * toneScale,
-    oscillator: { type: 'sine' },
-    modulation: { type: 'sine' },
-    envelope: { attack: 0.012, decay: 0.9, sustain: 0.28, release: 1.8 },
-    modulationEnvelope: { attack: 0.008, decay: 0.35, sustain: 0.1, release: 0.8 },
+    harmonicity: t.harmonicity,
+    modulationIndex: t.modulationIndex * toneScale,
+    oscillator: t.oscillator,
+    modulation: t.modulation,
+    envelope: t.envelope,
+    modulationEnvelope: t.modulationEnvelope,
   }).connect(tremolo);
   // Measured above 250Hz — the band the ear judges balance in — the keys
   // were taking 25% of the mix against the lead's ~0%: not merely loud, but
   // burying the melody they are supposed to sit under. Raw power share says
   // the opposite (5%), because it is dominated by the kick and bass and is
   // no guide to what sits forward.
-  keys.volume.value = -13;
+  keys.volume.value = t.volume;
   // Two comping hits a bar of four notes each, with a 1.8s release, needs
   // about a dozen voices. Twenty-four was DSP kept alive for nothing.
   keys.maxPolyphony = 12;
@@ -121,9 +198,12 @@ export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1) {
   return pinVoices(keys);
 }
 
-export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1) {
+export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes') {
+  const t = timbre(voice);
   const filter = new Tone.Filter({
-    frequency: 3800 * Math.pow(toneScale, 0.5),
+    // The lead sits a little brighter than the comping of the same timbre,
+    // so the line reads above the chords rather than inside them.
+    frequency: t.cutoff * 1.15 * Math.pow(toneScale, 0.5),
     type: 'lowpass',
     rolloff: -12,
   }).connect(bus);
@@ -132,16 +212,18 @@ export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1) {
     : new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.24, wet: 0.2 }).connect(filter);
 
   const lead = new Tone.PolySynth(Tone.FMSynth, {
-    harmonicity: 3,
-    modulationIndex: 1.8 * toneScale,
-    oscillator: { type: 'triangle' },
-    modulation: { type: 'sine' },
-    envelope: { attack: 0.014, decay: 0.5, sustain: 0.2, release: 1.1 },
-    modulationEnvelope: { attack: 0.01, decay: 0.25, sustain: 0.05, release: 0.6 },
+    harmonicity: t.harmonicity,
+    modulationIndex: t.modulationIndex * 0.8 * toneScale,
+    oscillator: t.oscillator,
+    modulation: t.modulation,
+    // Shorter than the comping voice of the same timbre: a melody note that
+    // hangs as long as a chord note blurs into the chord.
+    envelope: { ...t.envelope, decay: t.envelope.decay * 0.6, release: t.envelope.release * 0.65 },
+    modulationEnvelope: t.modulationEnvelope,
   }).connect(delay);
   // Up a little as the keys come down, so the motif is heard as the line it
   // is rather than as something happening behind the chords.
-  lead.volume.value = -11;
+  lead.volume.value = t.volume + 2;
   lead.maxPolyphony = 6;
 
   const send = new Tone.Gain(0.34).connect(reverbSend);
@@ -150,19 +232,51 @@ export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1) {
   return pinVoices(lead);
 }
 
-export function createBass(bus) {
+// `voice` picks the bass character. An upright is not a different waveform
+// so much as a different attack: a finger pulling a thick string takes a
+// moment to speak and the note dies rather than being held, where a synth
+// bass arrives instantly and sits. That difference is most of what makes a
+// track sound played rather than programmed.
+const BASSES = {
+  // The original: even, sustained, sits under everything without comment.
+  synth: {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.02, decay: 0.3, sustain: 0.6, release: 0.35 },
+    filterEnvelope: { attack: 0.02, decay: 0.2, sustain: 0.4, release: 0.3, baseFrequency: 160, octaves: 1.6 },
+    cutoff: 700,
+    volume: -14,
+  },
+  upright: {
+    // Slower to speak, and it decays instead of holding — the note is a
+    // pluck with a body behind it, not a tone being sustained. Measured,
+    // the first attempt died at almost exactly the same rate as the synth
+    // bass (0.90s against 0.96s to a tenth), which is not a different
+    // instrument. The sustain has to be genuinely low for the note to fall
+    // away rather than be held at a slightly quieter level.
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.045, decay: 0.42, sustain: 0.05, release: 0.32 },
+    // A wider filter sweep on the attack is the woody thump of the string
+    // against the fingerboard before the note settles.
+    filterEnvelope: { attack: 0.012, decay: 0.34, sustain: 0.16, release: 0.4, baseFrequency: 120, octaves: 2.4 },
+    cutoff: 620,
+    volume: -13,
+  },
+};
+
+export function createBass(bus, voice = 'synth') {
   // A pure sine puts all of its energy on the fundamental: it dominates the
   // power spectrum while staying quiet to the ear, and vanishes entirely on
   // a phone speaker that can't reproduce 65Hz. A triangle keeps the weight
   // but carries enough harmonics to be heard as a note, not just felt.
-  const filter = new Tone.Filter({ frequency: 700, type: 'lowpass', rolloff: -12 }).connect(bus);
+  const b = BASSES[voice] || BASSES.synth;
+  const filter = new Tone.Filter({ frequency: b.cutoff, type: 'lowpass', rolloff: -12 }).connect(bus);
 
   const bass = new Tone.MonoSynth({
-    oscillator: { type: 'triangle' },
-    envelope: { attack: 0.02, decay: 0.3, sustain: 0.6, release: 0.35 },
-    filterEnvelope: { attack: 0.02, decay: 0.2, sustain: 0.4, release: 0.3, baseFrequency: 160, octaves: 1.6 },
+    oscillator: b.oscillator,
+    envelope: b.envelope,
+    filterEnvelope: b.filterEnvelope,
   }).connect(filter);
-  bass.volume.value = -14;
+  bass.volume.value = b.volume;
 
   return bass;
 }
