@@ -22,6 +22,8 @@ const MODULES = [
   'js/sections.js',
   'js/background.js',
   'js/compose.js',
+  'js/palette.js',
+  'js/artwork.js',
   'js/master.js',
   'js/capture.js',
   'js/instruments.js',
@@ -33,7 +35,7 @@ const PAGE = 'js/page.js';
 // Modules belonging to the rendered-stream page (index.html) rather than
 // the live engine. They are not dead code, they are another page's code,
 // and bundling them here would ship a renderer to a page that plays live.
-const OTHER_PAGES = ['js/render.js', 'js/stream.js', 'js/texture.js', 'js/words.js', 'js/palette.js'];
+const OTHER_PAGES = ['js/render.js', 'js/stream.js', 'js/texture.js', 'js/words.js'];
 
 // Every other module under js/ is engine code and must be listed above, or
 // the bundle fails at runtime with a missing function.
@@ -74,6 +76,8 @@ html = html
   .replace(/^<!doctype html>\s*/i, '')
   .replace(/<\/?(?:html|head|body)(?:\s[^>]*)?>\s*/gi, '')
   .replace(/<meta\s+(?:charset|name="viewport")[^>]*>\s*/gi, '')
+  // Icons and the manifest are same-origin files the artifact host doesn't serve.
+  .replace(/<link\s+rel="(?:icon|apple-touch-icon|manifest)"[^>]*>\s*/gi, '')
   .replace(TONE_TAG, () => `<script>\n${tone}\n</script>`)
   .replace(PAGE_TAG, () => `<script>\n${bundle}\n</script>`);
 

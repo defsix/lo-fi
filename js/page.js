@@ -1,6 +1,7 @@
 import { LofiEngine } from './engine.js';
 import { chordLabel, romanLabel } from './theory.js';
 import { capture } from './capture.js';
+import { artworkFor } from './artwork.js';
 import { createBackgroundKeepAlive } from './background.js';
 
 // ---- visualiser ---------------------------------------------------------
@@ -190,6 +191,17 @@ function setPlayingUI(playing) {
 
 function showPalette() {
   const palette = engine.palette;
+  // The live page gets a lock-screen entry too, with the same artwork.
+  if (palette && 'mediaSession' in navigator && window.MediaMetadata) {
+    try {
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: palette.name + ' \u00b7 live',
+        artist: '076 lofi',
+        album: engine.key + ' \u00b7 ' + palette.mode,
+        artwork: artworkFor(palette),
+      });
+    } catch (_) { /* no media session here */ }
+  }
   const name = document.getElementById('palette');
   const feel = document.getElementById('feel');
   if (!palette || !name) return;

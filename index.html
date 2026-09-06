@@ -6,6 +6,9 @@
 <title>076 lofi</title>
 <meta name="description" content="Generative lo-fi, composed in your browser.">
 <meta name="theme-color" content="#141110">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
 <style>
   /* The palette sets --hue and --chroma at runtime; everything is derived
@@ -404,6 +407,7 @@
 <script type="module">
 import { LofiStream } from './js/stream.js';
 import { chordLabel, romanLabel } from './js/theory.js';
+import { artworkFor } from './js/artwork.js';
 
 const params = new URLSearchParams(location.search);
 const wordInputs = ['w1', 'w2', 'w3'].map((id) => document.getElementById(id));
@@ -457,9 +461,12 @@ stream.onChunk = (chunk) => {
   // offers them, and they should do what they say.
   if ('mediaSession' in navigator && window.MediaMetadata) {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: (palette ? palette.name : first.key) + ' · ' + first.section.name,
+      title: (palette ? palette.name : first.key) + ' \u00b7 ' + first.section.name,
       artist: '076 lofi',
-      album: 'generated on this device',
+      album: first.key + ' \u00b7 ' + (palette ? palette.mode : ''),
+      // Without artwork Android finds something itself, and on a Pixel that
+      // was a letter from the domain name, blurred behind the controls.
+      artwork: artworkFor(palette),
     });
     navigator.mediaSession.playbackState = 'playing';
     for (const [action, handler] of [['play', () => start()], ['pause', () => stop()], ['stop', () => stop()]]) {
