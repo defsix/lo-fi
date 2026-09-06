@@ -45,11 +45,34 @@ const MIN_CHUNK_BARS = 2;
 // rest absorbs the device being busy with something other than us.
 const RENDER_SAFETY = 0.75;
 
-// Start the next element this far before the current chunk's music ends.
-// An <audio> element cannot be started with sample accuracy, so the handover
-// is deliberately placed inside the tail where a few tens of milliseconds
-// of error are covered by the decay.
-const HANDOVER_LEAD = 0.12;
+// How far before the current chunk's music ends to start the next element.
+//
+// This exists to cancel the delay between calling play() and the element
+// actually sounding. It used to be a fixed 0.12s, on the reasoning that an
+// <audio> element cannot be started with sample accuracy and a little early
+// was safer than a little late. Measured, that reasoning was wrong twice
+// over: play() here returns sound within about 4ms, so the lead was almost
+// entirely error, and the error is not harmless. Every changeover landed
+// the new bar 116ms (min 93, max 139) before the old one had finished — the
+// last thirty-second of the outgoing bar sounding on top of the incoming
+// downbeat. A doubled transient at every seam, which is what a changeover
+// crackle is made of.
+//
+// So it is measured instead of assumed. The lead starts small and each
+// handover reports where the seam actually landed; the estimate follows.
+// A device where play() really is slow converges on a large lead, and this
+// one converges on almost none, without either being written down here.
+const INITIAL_LEAD = 0.02;
+const MAX_LEAD = 0.4;
+
+// How much of each observed error to take out. Media clocks are quantised,
+// so a full correction chases that quantisation instead of the latency.
+const LEAD_CORRECTION = 0.6;
+
+// When to read the two clocks back. The arithmetic works backwards from
+// currentTime, so a throttled timer firing late gives the same answer —
+// which matters, because hidden is exactly when this needs to be right.
+const SEAM_CHECK_MS = 300;
 
 // Playing, still-ringing, and free-to-load. See the note at the top.
 const ELEMENT_COUNT = 3;
@@ -166,6 +189,9 @@ export class LofiStream {
     this.staged = null;    // the queued chunk already loaded onto an element
     this.current = null;   // what is sounding now
     this.handoverTimer = null;
+    // Measured, not assumed. See INITIAL_LEAD.
+    this.lead = INITIAL_LEAD;
+    this.lastSeam = null;
 
     this.onChunk = null;   // (chunk) => void, when a chunk starts sounding
     this.onStatus = null;  // (text) => void
@@ -325,7 +351,7 @@ export class LofiStream {
 
     // Hand over at the end of this chunk's music, leaving its tail ringing.
     clearTimeout(this.handoverTimer);
-    const wait = Math.max(0, chunk.musicSeconds - HANDOVER_LEAD) * 1000;
+    const wait = Math.max(0, chunk.musicSeconds - this.lead) * 1000;
     this.handoverTimer = setTimeout(() => this._handover(), wait);
 
     // A backstop for a throttled timer. With the screen off the timer above
@@ -343,6 +369,11 @@ export class LofiStream {
     const outgoing = this._element(this.active);
     outgoing.onended = null;
     const finished = this.current;
+
+    // Where the outgoing element is, at the moment we decide to switch.
+    // Read before anything else moves, because _play advances `active`.
+    const decidedAt = performance.now();
+    const outClock = outgoing.paused ? null : outgoing.currentTime;
     const next = this.queue.shift() || (await this._renderAhead().catch(() => null));
     if (!this.playing || !next) return;
     if (this.queue[0] === next) this.queue.shift();
@@ -352,6 +383,8 @@ export class LofiStream {
     // its tail on the element we just left.
     this.active = next.element !== undefined ? next.element : (this.active + 1) % ELEMENT_COUNT;
     await this._play(next);
+
+    this._measureSeam(finished, decidedAt, outClock);
 
     // Only now, with `active` moved on, is it safe to work out which
     // element is free and load the chunk after this one onto it.
@@ -375,6 +408,30 @@ export class LofiStream {
     this._retire(finished);
 
     this._renderAhead();
+  }
+
+  // Where the seam actually landed, and the correction that follows from it.
+  //
+  // Negative means the incoming downbeat sounded before the outgoing bar had
+  // finished — the two overlap, and a doubled transient is audible. Positive
+  // means a short hole in the music, which the outgoing tail is still
+  // covering. Either way the lead moves to cancel it next time.
+  _measureSeam(finished, decidedAt, outClock) {
+    if (outClock == null || !finished || !finished.musicSeconds) return;
+    const incoming = this._element(this.active);
+    setTimeout(() => {
+      if (!this.playing || !incoming || incoming.paused || !incoming.currentTime) return;
+      // Worked backwards from each element's own clock, so a timer that
+      // fired late does not corrupt the answer.
+      const startedAt = performance.now() - incoming.currentTime * 1000;
+      const musicEndedAt = decidedAt + (finished.musicSeconds - outClock) * 1000;
+      const offset = (startedAt - musicEndedAt) / 1000;
+      // A second out is not a seam, it is a stall; correcting from it would
+      // throw the estimate away.
+      if (!Number.isFinite(offset) || Math.abs(offset) > 0.75) return;
+      this.lastSeam = offset;
+      this.lead = Math.max(0, Math.min(MAX_LEAD, this.lead + offset * LEAD_CORRECTION));
+    }, SEAM_CHECK_MS);
   }
 
   // For setting the texture levels from the console while they are being

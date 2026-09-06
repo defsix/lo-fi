@@ -48,6 +48,38 @@ function fire(voice, event) {
   else voice.triggerAttackRelease(event.duration, event.time, event.velocity);
 }
 
+// Take the very edges of a rendered chunk to silence.
+//
+// A media element that reaches the end of its buffer drops to zero on the
+// next sample, and the tail here does not arrive at zero on its own:
+// measured across twenty chunks, the last ten milliseconds peaks between
+// -53 and -62 dBFS. That drop is a step change, and a step change is a
+// click. Nothing in the music needs the final twenty milliseconds of a
+// reverb tail, so it is ramped away.
+//
+// Raised cosine rather than linear: a linear ramp removes the step in the
+// signal but leaves one in its slope, which is still an edge.
+const FADE_IN_MS = 3;
+const FADE_OUT_MS = 25;
+
+function softenEdges(buffer) {
+  const rate = buffer.sampleRate;
+  const inLen = Math.floor((FADE_IN_MS / 1000) * rate);
+  const outLen = Math.floor((FADE_OUT_MS / 1000) * rate);
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = 0; i < inLen && i < data.length; i++) {
+      data[i] *= 0.5 - 0.5 * Math.cos((Math.PI * i) / inLen);
+    }
+    for (let i = 0; i < outLen && i < data.length; i++) {
+      const at = data.length - outLen + i;
+      if (at < 0) continue;
+      data[at] *= 0.5 + 0.5 * Math.cos((Math.PI * i) / outLen);
+    }
+  }
+  return buffer;
+}
+
 /**
  * Render `bars` of music starting at `startBar`, advancing `state`.
  * Returns { buffer, startBar, bars, plans } — plans so the caller can show
@@ -201,6 +233,8 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
     }
     Tone.getTransport().start();
   }, musicSeconds + TAIL_SECONDS);
+
+  softenEdges(buffer);
 
   score.sort((a, b) => a.t - b.t);
   return { buffer, startBar, bars, plans, musicSeconds, applied, palette, bpm, score };
