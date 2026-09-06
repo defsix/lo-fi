@@ -64,6 +64,12 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
   // rather than assumed.
   const applied = {};
   const plans = [];
+  // Every note, with its time from the start of the chunk. Kept so the page
+  // can draw what is sounding without analysing the audio — reading the
+  // signal would mean routing the <audio> element through an AudioContext,
+  // and an AudioContext is suspended when the tab is backgrounded, which
+  // would undo the screen-off playback this whole architecture exists for.
+  const score = [];
   // `rng` is threaded through rather than left as Math.random so a render
   // can be made repeatable. Without it, comparing two renders compares two
   // different pieces of music: every measurement of a mix parameter here
@@ -161,7 +167,13 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
       for (const [name, list] of Object.entries(events)) {
         const voice = targets[name];
         if (!voice || bypass.has(name)) continue;
-        for (const event of list) fire(voice, { ...event, time: barStart + event.time });
+        for (const event of list) {
+          fire(voice, { ...event, time: barStart + event.time });
+          // The click doubles the kick; drawing both would just brighten it.
+          if (name !== 'click') {
+            score.push({ t: +(barStart + event.time).toFixed(3), v: name, g: +(event.velocity || 0.5).toFixed(2), n: event.note || null });
+          }
+        }
       }
 
       // The record's own surface, and the mix breathing against the kick.
@@ -173,7 +185,8 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
     Tone.getTransport().start();
   }, musicSeconds + TAIL_SECONDS);
 
-  return { buffer, startBar, bars, plans, musicSeconds, applied, palette, bpm };
+  score.sort((a, b) => a.t - b.t);
+  return { buffer, startBar, bars, plans, musicSeconds, applied, palette, bpm, score };
 }
 
 /**

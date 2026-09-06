@@ -415,4 +415,17 @@ export class LofiStream {
   get isPlaying() {
     return this.playing;
   }
+
+  /**
+   * Where the sounding chunk has reached, in seconds, and the notes it
+   * holds. This is how the page draws the music: from the score and the
+   * element's own clock, not from the signal.
+   */
+  position() {
+    const chunk = this.current;
+    if (!chunk || !this.playing) return null;
+    const el = this.elements[this.active];
+    if (!el || el.paused) return null;
+    return { at: el.currentTime, score: chunk.score, chunk };
+  }
 }
