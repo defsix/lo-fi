@@ -65,14 +65,30 @@ const RENDER_SAFETY = 0.75;
 const INITIAL_LEAD = 0.02;
 const MAX_LEAD = 0.4;
 
-// How much of each observed error to take out. Media clocks are quantised,
-// so a full correction chases that quantisation instead of the latency.
-const LEAD_CORRECTION = 0.6;
+// How much of each observed error to take out.
+//
+// A media element's currentTime is quantised to its buffer: every seam this
+// has measured came back a multiple of 23ms, which is 1024 samples at
+// 44.1kHz. Correcting for a reading inside one quantum is chasing the
+// clock's resolution rather than the latency, and the first version of this
+// did exactly that — 20 -> 48 -> 34 -> 6 -> 0ms, hunting rather than
+// settling. So readings below a quantum are left alone, and what is outside
+// it is corrected gently.
+const LEAD_DEADBAND = 0.025;
+const LEAD_CORRECTION = 0.4;
 
 // When to read the two clocks back. The arithmetic works backwards from
 // currentTime, so a throttled timer firing late gives the same answer —
 // which matters, because hidden is exactly when this needs to be right.
 const SEAM_CHECK_MS = 300;
+
+// A glitch is heard, not caught. By the time anyone can say "there, at
+// 3:42" the moment is a minute gone and nothing was watching. So the stream
+// keeps a short flight recorder: every handover, render, seam and media-
+// element complaint, timestamped against the music rather than the wall
+// clock, so a report says which bar was sounding rather than what time it
+// was. Bounded, because this runs for hours.
+const LOG_LIMIT = 240;
 
 // Playing, still-ringing, and free-to-load. See the note at the top.
 const ELEMENT_COUNT = 3;
@@ -193,6 +209,11 @@ export class LofiStream {
     this.lead = INITIAL_LEAD;
     this.lastSeam = null;
 
+    // The flight recorder, and the music clock it stamps against.
+    this.log = [];
+    this.musicPlayed = 0;   // seconds of music finished before the current chunk
+    this.startedAt = null;  // wall clock, for comparing against the music clock
+
     this.onChunk = null;   // (chunk) => void, when a chunk starts sounding
     this.onStatus = null;  // (text) => void
   }
@@ -206,12 +227,106 @@ export class LofiStream {
       el.setAttribute('data-lofi-stream', String(index));
       document.body.appendChild(el);
       this.elements[index] = el;
+      this._watchElement(el, index);
     }
     return this.elements[index];
   }
 
   _say(text) {
     if (this.onStatus) this.onStatus(text);
+  }
+
+  // --- the flight recorder ----------------------------------------------
+
+  // Seconds of music heard since play. Not wall-clock time: it is the
+  // position in the piece, which is what a report needs to be about.
+  elapsed() {
+    if (!this.playing) return this.musicPlayed;
+    const el = this.elements[this.active];
+    const within = el && !el.paused ? Math.min(el.currentTime, this.current ? this.current.musicSeconds : el.currentTime) : 0;
+    return this.musicPlayed + within;
+  }
+
+  // The bar sounding now, worked out from the chunk rather than counted, so
+  // it stays right across a handover.
+  bar() {
+    const c = this.current;
+    if (!c || !c.musicSeconds) return null;
+    const el = this.elements[this.active];
+    const within = el && !el.paused ? Math.min(el.currentTime, c.musicSeconds) : 0;
+    return c.startBar + Math.floor((within / c.musicSeconds) * c.bars);
+  }
+
+  _note(type, data) {
+    this.log.push({ at: +this.elapsed().toFixed(2), bar: this.bar(), type, ...data });
+    if (this.log.length > LOG_LIMIT) this.log.splice(0, this.log.length - LOG_LIMIT);
+  }
+
+  // Media elements report their own trouble, and it is the trouble nobody
+  // can see from the outside: `waiting` is the element having run out of
+  // data mid-playback, which is a stutter by definition.
+  _watchElement(el, index) {
+    if (el._watched) return;
+    el._watched = true;
+
+    // `waiting` means the element wants data it does not have. That is a
+    // stutter — but only sometimes: it also fires at the top of every chunk
+    // while the element takes hold of the blob it was just handed, before
+    // any of it was due to be heard. The two are told apart by where the
+    // element's own clock was when it happened, and how long it lasted.
+    el.addEventListener('waiting', () => {
+      if (!this.playing || index !== this.active) return;
+      el._waitFrom = performance.now();
+      el._waitAt = el.currentTime;
+    });
+    el.addEventListener('playing', () => {
+      if (el._waitFrom == null) return;
+      const ms = Math.round(performance.now() - el._waitFrom);
+      const midChunk = el._waitAt > 0.05;
+      el._waitFrom = null;
+      if (!this.playing) return;
+      // Mid-chunk it is an underrun and always worth a line. At the start of
+      // a chunk it is only worth one if it took long enough to be heard.
+      if (midChunk) this._note('underrun', { el: index, ms });
+      else if (ms > 30) this._note('slow-start', { el: index, ms });
+    });
+
+    for (const event of ['stalled', 'error', 'abort']) {
+      el.addEventListener(event, () => {
+        if (this.playing && index === this.active) {
+          this._note(event, { el: index, code: el.error ? el.error.code : undefined });
+        }
+      });
+    }
+  }
+
+  /**
+   * Everything known about the current playback, as text. Written to be
+   * pasted into a message: the seed first, so the exact track can be played
+   * back, then what the stream was doing around the moment complained of.
+   */
+  report(note) {
+    const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const p = this.palette;
+    const lines = [
+      note ? `-- ${note} at ${mmss(this.elapsed())}, bar ${this.bar()} --` : '-- lofi report --',
+      `seed      ${this.seed}`,
+      `link      ${location.origin}${location.pathname}?seed=${this.seed}`,
+      `track     ${p ? p.name : '?'} · ${this.state ? this.state.key : '?'} ${p ? p.mode : ''} · ${p ? Math.round(p.bpm) : '?'} bpm`,
+      `position  ${mmss(this.elapsed())}  bar ${this.bar()}`,
+      `chunk     ${this.current ? `${this.current.bars} bars from ${this.current.startBar}` : 'none'}`,
+      `lead      ${Math.round(this.lead * 1000)} ms   last seam ${this.lastSeam == null ? '—' : Math.round(this.lastSeam * 1000) + ' ms'}`,
+      `render    ${this.renderRatio ? this.renderRatio.toFixed(2) + '×' : '—'}  queue ${this.queue.length}  next ${this.nextChunkBars} bars`,
+      `agent     ${navigator.userAgent}`,
+      '',
+      'time   bar   event',
+    ];
+    for (const e of this.log) {
+      const { at, bar, type, ...rest } = e;
+      const detail = Object.entries(rest).map(([k, v]) => `${k}=${v}`).join(' ');
+      lines.push(`${mmss(at).padStart(6)} ${String(bar == null ? '—' : bar).padStart(5)}   ${type}${detail ? ' ' + detail : ''}`);
+    }
+    return lines.join('\n');
   }
 
   // Render the chunk after the one we last handed out. Only ever one render
@@ -254,6 +369,7 @@ export class LofiStream {
         chunk.renderSeconds = renderSeconds;
         chunk.ratio = this.renderRatio;
         this.nextChunkBars = this._nextSize(bars);
+        this._note('render', { from: startBar, bars, secs: +renderSeconds.toFixed(2), ratio: +this.renderRatio.toFixed(2) });
         chunk.url = URL.createObjectURL(toWavBlob(chunk.buffer));
         // The decoded buffer is megabytes and is not needed once encoded.
         chunk.buffer = null;
@@ -319,6 +435,18 @@ export class LofiStream {
   async start() {
     if (this.playing) return;
     this.playing = true;
+    this.musicPlayed = 0;
+    this.startedAt = performance.now();
+    this.log = [];
+    this._note('start', { seed: this.seed, palette: this.palette ? this.palette.name : '?' });
+    // The screen going off is the condition half of this architecture exists
+    // for, and it is invisible in a log that does not record it.
+    if (!this._watchingVisibility) {
+      this._watchingVisibility = true;
+      document.addEventListener('visibilitychange', () => {
+        if (this.playing) this._note(document.hidden ? 'hidden' : 'visible', {});
+      });
+    }
     this._say('writing the first few bars…');
 
     const first = this.queue.shift() || (await this._renderAhead());
@@ -359,7 +487,11 @@ export class LofiStream {
     // The element's own end event comes from the media pipeline, so if it
     // arrives first, hand over immediately rather than waiting.
     el.onended = () => {
-      if (this.playing && this.current === chunk) this._handover();
+      if (!this.playing || this.current !== chunk) return;
+      // Reaching the end of the file means the handover timer never fired
+      // in time — the tail has already run out and the gap is audible.
+      this._note('ended-first', { from: chunk.startBar });
+      this._handover();
     };
   }
 
@@ -374,8 +506,15 @@ export class LofiStream {
     // Read before anything else moves, because _play advances `active`.
     const decidedAt = performance.now();
     const outClock = outgoing.paused ? null : outgoing.currentTime;
+    // An empty queue here means the handover had to wait on a render. That
+    // is the difference between a seam and a silence, so it is worth a line.
+    const waited = this.queue.length === 0;
     const next = this.queue.shift() || (await this._renderAhead().catch(() => null));
-    if (!this.playing || !next) return;
+    if (!this.playing || !next) {
+      this._note('starved', { queue: 0 });
+      return;
+    }
+    if (waited) this._note('waited-on-render', {});
     if (this.queue[0] === next) this.queue.shift();
     if (this.staged === next) this.staged = null;
 
@@ -384,6 +523,8 @@ export class LofiStream {
     this.active = next.element !== undefined ? next.element : (this.active + 1) % ELEMENT_COUNT;
     await this._play(next);
 
+    if (finished) this.musicPlayed += finished.musicSeconds;
+    this._note('chunk', { from: next.startBar, bars: next.bars });
     this._measureSeam(finished, decidedAt, outClock);
 
     // Only now, with `active` moved on, is it safe to work out which
@@ -430,7 +571,14 @@ export class LofiStream {
       // throw the estimate away.
       if (!Number.isFinite(offset) || Math.abs(offset) > 0.75) return;
       this.lastSeam = offset;
-      this.lead = Math.max(0, Math.min(MAX_LEAD, this.lead + offset * LEAD_CORRECTION));
+      const before = this.lead;
+      if (Math.abs(offset) >= LEAD_DEADBAND) {
+        this.lead = Math.max(0, Math.min(MAX_LEAD, this.lead + offset * LEAD_CORRECTION));
+      }
+      this._note('seam', {
+        off: Math.round(offset * 1000),
+        lead: before === this.lead ? Math.round(this.lead * 1000) : Math.round(before * 1000) + '→' + Math.round(this.lead * 1000),
+      });
     }, SEAM_CHECK_MS);
   }
 
@@ -471,6 +619,7 @@ export class LofiStream {
   }
 
   stop() {
+    if (this.playing) this._note('stop', {});
     this.playing = false;
     clearTimeout(this.handoverTimer);
     for (const el of this.elements) {

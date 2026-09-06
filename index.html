@@ -420,11 +420,13 @@
     <div><dt>chord</dt><dd class="progression" id="progression">&mdash;</dd></div>
     <div><dt>section</dt><dd id="section">&mdash;</dd></div>
     <div><dt>seed</dt><dd id="seed">&mdash;</dd></div>
+    <div><dt>time</dt><dd id="clock">0:00</dd></div>
   </dl>
 
   <div class="track-actions">
     <button class="ghost" id="new-track">new track</button>
     <button class="ghost" id="share">copy link</button>
+    <button class="ghost" id="report" title="Copy what the player was doing, to report a glitch">report glitch</button>
   </div>
 
   <p class="footnote">
@@ -582,17 +584,56 @@ function flash(button, text) {
   }, 1400);
 }
 
-$('share').addEventListener('click', async () => {
-  const link = trackLink();
+// --- the clock, and reporting a glitch ----------------------------------
+//
+// A glitch is heard and then gone. Saying "it happened at 3:42 on this
+// track" only works if the player is showing 3:42 and the track has a name,
+// which between the seed and this clock it now does. The button goes
+// further and copies what the stream was actually doing — the last few
+// minutes of handovers, seams, renders and any complaint the media element
+// made — because the interesting part is what happened just before.
+
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+let clockTimer = null;
+
+function tickClock() {
+  $('clock').textContent = mmss(stream.elapsed());
+}
+
+// setInterval rather than the drawing loop: the scope stops when the page is
+// hidden and the clock should not stop with it.
+function startClock() {
+  clearInterval(clockTimer);
+  clockTimer = setInterval(tickClock, 500);
+  tickClock();
+}
+
+function stopClock() {
+  clearInterval(clockTimer);
+  clockTimer = null;
+  tickClock();
+}
+
+// No clipboard permission, or an insecure origin: showing the text is still
+// an answer, and the person can copy it themselves.
+async function copyText(text, button, label) {
   try {
-    await navigator.clipboard.writeText(link);
-    flash($('share'), 'copied');
+    await navigator.clipboard.writeText(text);
+    flash(button, label);
   } catch (_) {
-    // No clipboard permission, or an insecure origin. Showing the link is
-    // still an answer; the person can copy it themselves.
-    window.prompt('link to this track', link);
+    window.prompt('copy this', text);
   }
+}
+
+$('report').addEventListener('click', () => {
+  // Marked at the moment of pressing, not when it is read, so the timestamp
+  // in the report is the one being complained about.
+  const text = stream.report('glitch reported');
+  copyText(text, $('report'), 'copied');
 });
+
+$('share').addEventListener('click', () => copyText(trackLink(), $('share'), 'copied'));
 
 // Another piece, same words. Without this the only way to a new track is to
 // edit the words, which is the wrong lever when the words were the point.
@@ -602,6 +643,7 @@ $('new-track').addEventListener('click', async () => {
   showReading(stream.setWords(currentWords()));
   previewPalette();
   showSeed();
+  tickClock();
   if (wasPlaying) await start();
 });
 
@@ -784,6 +826,7 @@ async function start() {
   try {
     await stream.start();
     startScope();
+    startClock();
   } catch (err) {
     setStatus('could not start: ' + (err && err.message ? err.message : err), 'error');
     setPlayingUI(false);
@@ -796,6 +839,7 @@ async function start() {
 function stop() {
   stream.stop();
   stopScope();
+  stopClock();
   setPlayingUI(false);
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   $('section').textContent = '—';
