@@ -17,7 +17,7 @@ const engine = new LofiEngine({
   useStream: params.has('stream'),
 });
 window.__engine = engine; // exposed for timing analysis in tests
-const canvas = document.getElementById('scope');
+const canvas = document.getElementById('scope-live');
 const ctx = canvas.getContext('2d');
 const BIN_COUNT = 64;
 const smoothed = new Array(BIN_COUNT).fill(0);
@@ -43,7 +43,17 @@ function sizeCanvas() {
 
 // Read once, not per frame: getComputedStyle forces a style resolution, and
 // at 60fps that competes with the note scheduling on the same thread.
-const AMBER = getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#e3a24d';
+// Read from an element that uses --accent: the custom property itself comes
+// back as its unresolved declaration, calc() and all.
+let AMBER = '#e3a24d';
+function refreshAccent() {
+  const probe = document.querySelector('.brand');
+  if (probe) {
+    const resolved = getComputedStyle(probe).color;
+    if (resolved) AMBER = resolved;
+  }
+}
+refreshAccent();
 
 // The visualiser is decoration; the audio is not. Twenty frames a second is
 // still smooth for bars that are already heavily smoothed, and it leaves the
@@ -67,9 +77,32 @@ function drawScope(now) {
   const values = engine.getSpectrum();
   ctx.fillStyle = AMBER;
 
+  // FFT bins are linear in frequency and music is not: with 64 linear bins
+  // over 22kHz, everything this engine produces lands in the first handful
+  // and the rest of the width is a flat line of dots. Each bar now covers a
+  // logarithmic slice and takes the loudest bin in it, which is how a
+  // spectrum is read.
+  // And only over the range this music occupies. The analyser's bins run to
+  // the Nyquist limit, around 22kHz, while nothing here reaches much past
+  // 6 — so spreading all of them across the width left two thirds of it as
+  // a flat line of dots reporting silence accurately and uselessly.
+  const binsAvailable = values ? values.length : BIN_COUNT;
+  const highest = Math.min(binsAvailable, Math.ceil(binsAvailable * 0.34));
+  const lowest = 1;
+  const ratio = Math.pow(highest / lowest, 1 / BIN_COUNT);
+
   for (let i = 0; i < BIN_COUNT; i++) {
-    // fft values arrive in dB: -100 is silence, 0 is full scale
-    const level = values ? Math.max(0, Math.min(1, (values[i] + 90) / 75)) : 0;
+    let level = 0;
+    if (values) {
+      const from = Math.floor(lowest * Math.pow(ratio, i));
+      const to = Math.max(from + 1, Math.floor(lowest * Math.pow(ratio, i + 1)));
+      let loudest = -Infinity;
+      for (let bin = from; bin < to && bin < highest; bin++) {
+        if (values[bin] > loudest) loudest = values[bin];
+      }
+      // fft values arrive in dB: -100 is silence, 0 is full scale
+      level = Math.max(0, Math.min(1, (loudest + 90) / 75));
+    }
     const taper = Math.pow(Math.sin((i / (BIN_COUNT - 1)) * Math.PI), 0.6);
     smoothed[i] += (level * taper - smoothed[i]) * 0.22;
 
@@ -95,6 +128,39 @@ function stopScope() {
   ctx.clearRect(0, 0, cssWidth, cssHeight);
   smoothed.fill(0);
 }
+
+// ---- theme --------------------------------------------------------------
+//
+// The same colour system as the front page, driven by the same palettes, so
+// the two pages are one product rather than an engine and its diagnostic.
+
+function applyColour(palette) {
+  if (!palette || palette.hue === undefined) return;
+  document.documentElement.style.setProperty('--hue', String(palette.hue));
+  document.documentElement.style.setProperty('--chroma', String(palette.chroma));
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    const probe = getComputedStyle(document.body).backgroundColor;
+    if (probe) meta.setAttribute('content', probe);
+  }
+  // The scope reads --accent through an element, since the custom property
+  // itself comes back with its calc() unresolved.
+  setTimeout(refreshAccent, 2600);
+  refreshAccent();
+}
+
+const MODE_KEY = '076lofi:mode';
+function setMode(mode) {
+  document.documentElement.dataset.mode = mode;
+  try { localStorage.setItem(MODE_KEY, mode); } catch (_) { /* private window */ }
+}
+(function initMode() {
+  let saved = null;
+  try { saved = localStorage.getItem(MODE_KEY); } catch (_) { /* private window */ }
+  if (saved === 'day' || saved === 'night') return setMode(saved);
+  const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+  setMode(prefersLight ? 'day' : 'night');
+})();
 
 // ---- controls -----------------------------------------------------------
 const playBtn = document.getElementById('play');
@@ -122,6 +188,17 @@ function setPlayingUI(playing) {
   playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
 }
 
+function showPalette() {
+  const palette = engine.palette;
+  const name = document.getElementById('palette');
+  const feel = document.getElementById('feel');
+  if (!palette || !name) return;
+  name.textContent = palette.name;
+  name.dataset.idle = engine.isPlaying ? 'false' : 'true';
+  if (feel) feel.textContent = palette.mode + ' \u00b7 ' + Math.round(palette.bpm) + ' bpm \u00b7 live';
+  applyColour(palette);
+}
+
 function showMix() {
   keyEl.textContent = engine.key + ' major';
   progressionEl.textContent = engine.chords.map(romanLabel).join(' - ');
@@ -135,7 +212,7 @@ engine.onChordChange = (chord) => {
 
 // The arrangement takes a new key at the top of each cycle, so the readout
 // has to follow it rather than being set once at the start.
-engine.onMixChange = () => showMix();
+engine.onMixChange = () => { showMix(); showPalette(); };
 
 // Screen-off on Android suspends us unless the platform thinks we are a
 // media player. See background.js.
@@ -155,6 +232,7 @@ async function play() {
     startScope();
     engine.setVolume(Number(volumeInput.value));
     showMix();
+    showPalette();
     setStatus('generating - chords, bass and drums written live in your browser');
     setPlayingUI(true);
   } catch (err) {
@@ -170,6 +248,14 @@ function stop() {
   stopScope();
   setPlayingUI(false);
   setStatus('stopped');
+}
+
+const modeBtn = document.getElementById('mode');
+if (modeBtn) {
+  modeBtn.addEventListener('click', () => {
+    setMode(document.documentElement.dataset.mode === 'day' ? 'night' : 'day');
+    applyColour(engine.palette);
+  });
 }
 
 playBtn.addEventListener('click', () => (engine.isPlaying ? stop() : play()));

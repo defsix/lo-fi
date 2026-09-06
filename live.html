@@ -2,262 +2,448 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141110">
 <title>076 Lofi Engine Room</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
 <style>
+  /* The palette sets --hue and --chroma at runtime; everything is derived
+     from them, so the whole page moves together when the track changes. */
   :root {
-    --bg: oklch(0.14 0.012 55);
-    --panel: oklch(0.19 0.014 50);
-    --border: oklch(0.26 0.016 50);
-    --text: oklch(0.95 0.01 75);
-    --text-dim: oklch(0.68 0.02 60);
-    --text-faint: oklch(0.48 0.018 55);
-    --amber: oklch(0.78 0.15 65);
-    --amber-soft: oklch(0.78 0.15 65 / 0.14);
-    --alert: oklch(0.72 0.16 30);
+    --hue: 40;
+    --chroma: 0.05;
     --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     --sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+    /* A colour change should feel like light shifting in a room, not a
+       theme being switched. */
+    --shift: 2.4s var(--ease);
+  }
+
+  /* Night, and the default: this is a thing to leave running in the dark. */
+  :root, :root[data-mode="night"] {
+    --bg: oklch(0.145 calc(var(--chroma) * 0.55) var(--hue));
+    --bg-far: oklch(0.10 calc(var(--chroma) * 0.4) var(--hue));
+    --panel: oklch(0.21 calc(var(--chroma) * 0.5) var(--hue) / 0.55);
+    --line: oklch(0.34 calc(var(--chroma) * 0.45) var(--hue) / 0.5);
+    --text: oklch(0.96 0.012 var(--hue));
+    --dim: oklch(0.74 0.022 var(--hue));
+    --faint: oklch(0.55 0.02 var(--hue));
+    --accent: oklch(0.82 calc(var(--chroma) + 0.06) var(--hue));
+    --accent-soft: oklch(0.82 calc(var(--chroma) + 0.06) var(--hue) / 0.15);
+    --glow: oklch(0.7 calc(var(--chroma) + 0.05) var(--hue) / 0.30);
+  }
+
+  :root[data-mode="day"] {
+    --bg: oklch(0.955 calc(var(--chroma) * 0.30) var(--hue));
+    --bg-far: oklch(0.90 calc(var(--chroma) * 0.42) var(--hue));
+    --panel: oklch(1 0 0 / 0.5);
+    --line: oklch(0.55 calc(var(--chroma) * 0.35) var(--hue) / 0.32);
+    --text: oklch(0.24 0.03 var(--hue));
+    --dim: oklch(0.44 0.035 var(--hue));
+    --faint: oklch(0.60 0.03 var(--hue));
+    --accent: oklch(0.50 calc(var(--chroma) + 0.05) var(--hue));
+    --accent-soft: oklch(0.50 calc(var(--chroma) + 0.05) var(--hue) / 0.12);
+    --glow: oklch(0.72 calc(var(--chroma) + 0.04) var(--hue) / 0.34);
   }
 
   * { box-sizing: border-box; }
 
   body {
     margin: 0;
-    min-height: 100vh;
+    min-height: 100svh;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 40px 20px;
+    padding: max(22px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
     background: var(--bg);
     color: var(--text);
     font-family: var(--sans);
+    transition: background var(--shift), color var(--shift);
+    overflow-x: hidden;
+  }
+
+  /* Two soft pools of light behind everything. They drift very slowly —
+     slow enough that you notice only that the room is not static. */
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    inset: -30vmax;
+    z-index: -1;
+    background: radial-gradient(38vmax 38vmax at 30% 28%, var(--glow), transparent 68%);
+    transition: background var(--shift);
+    animation: drift 54s var(--ease) infinite alternate;
+    pointer-events: none;
+  }
+
+  body::after {
+    background: radial-gradient(44vmax 44vmax at 72% 74%, var(--glow), transparent 70%);
+    animation-duration: 78s;
+    animation-direction: alternate-reverse;
+    opacity: 0.7;
+  }
+
+  @keyframes drift {
+    from { transform: translate3d(-3%, -2%, 0) scale(1); }
+    to   { transform: translate3d(4%, 3%, 0) scale(1.12); }
+  }
+
+  /* Deeper at the edges, so the page reads as a space rather than a card. */
+  /* The music, drawn from its own score. It sits behind the content as
+     part of the room's light rather than as a panel of bars. */
+  #scope {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 1.2s var(--ease);
+    pointer-events: none;
+  }
+
+  #scope[data-on="true"] { opacity: 1; }
+
+  .vignette {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(120% 90% at 50% 40%, transparent 42%, var(--bg-far) 100%);
+    transition: background var(--shift);
+    pointer-events: none;
   }
 
   .stage {
-    width: min(100%, 640px);
+    width: min(100%, 520px);
+    margin: auto 0;
     display: flex;
     flex-direction: column;
-    gap: 26px;
+    gap: 30px;
   }
 
   .masthead {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 16px;
-    flex-wrap: wrap;
   }
 
   .brand {
     font-family: var(--mono);
     font-weight: 700;
-    font-size: 19px;
-    color: var(--amber);
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+    transition: color var(--shift);
   }
 
-  .eyebrow {
+  .mode {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+  }
+
+  .mode:hover { color: var(--accent); border-color: var(--accent); }
+  .mode svg { display: block; }
+  :root[data-mode="day"] .mode .moon { display: none; }
+  :root:not([data-mode="day"]) .mode .sun { display: none; }
+
+  /* --- the hero: what you are listening to --------------------------- */
+
+  .now {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-height: 78px;
+    justify-content: center;
+  }
+
+  .now-name {
+    font-size: clamp(28px, 8vw, 40px);
+    font-weight: 600;
+    letter-spacing: -0.022em;
+    line-height: 1.05;
+    color: var(--text);
+    transition: color var(--shift);
+  }
+
+  .now-name[data-idle="true"] { color: var(--faint); font-weight: 500; }
+
+  .now-sub {
     font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.16em;
+    font-size: 11.5px;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
-    color: var(--text-faint);
+    color: var(--faint);
+    min-height: 15px;
   }
 
-  .scope-wrap { height: 190px; }
-
-  canvas { display: block; width: 100%; height: 100%; }
+  /* --- transport ------------------------------------------------------ */
 
   .transport {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 20px;
+    gap: 22px;
   }
 
   .play {
-    width: 62px;
-    height: 62px;
-    flex-shrink: 0;
+    width: 84px;
+    height: 84px;
     border-radius: 999px;
-    border: 2px solid var(--amber);
-    background: transparent;
-    color: var(--amber);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: grid;
+    place-items: center;
     cursor: pointer;
-    transition: transform 0.12s ease, background 0.15s ease;
+    transition: transform 0.18s var(--ease), background 0.2s, box-shadow 0.3s, color var(--shift), border-color var(--shift);
   }
 
-  .play:hover { background: var(--amber-soft); transform: scale(1.04); }
-  .play:disabled { opacity: 0.45; cursor: progress; }
+  .play:hover { transform: scale(1.045); box-shadow: 0 0 0 10px var(--accent-soft); }
+  .play:active { transform: scale(0.98); }
+  .play:disabled { opacity: 0.5; cursor: progress; }
+  .play svg { display: block; margin-left: 3px; }
+  .play[aria-pressed="true"] svg { margin-left: 0; }
 
-  .regen {
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.04em;
-    padding: 10px 18px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: border-color 0.15s ease, color 0.15s ease;
+  /* A slow pulse while it is writing the first bars, so the wait reads as
+     work happening rather than as nothing happening. */
+  .play[data-busy="true"] { animation: breathe 2.1s var(--ease) infinite; }
+  @keyframes breathe {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+    50% { box-shadow: 0 0 0 14px transparent; }
   }
-
-  .regen:hover { border-color: var(--amber); color: var(--amber); }
 
   .vol {
-    flex: 1;
     display: flex;
     align-items: center;
-    gap: 10px;
-    justify-content: flex-end;
-    color: var(--text-faint);
+    gap: 12px;
+    width: min(100%, 240px);
+    color: var(--faint);
   }
 
   input[type="range"] {
     -webkit-appearance: none;
     appearance: none;
-    width: 110px;
-    height: 3px;
+    flex: 1;
+    height: 2px;
     border-radius: 999px;
-    background: var(--border);
+    background: var(--line);
     outline: none;
     cursor: pointer;
+    transition: background var(--shift);
   }
 
   input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 12px;
-    height: 12px;
+    width: 13px; height: 13px;
     border-radius: 999px;
-    background: var(--amber);
+    background: var(--accent);
     border: none;
+    transition: background var(--shift);
   }
 
   input[type="range"]::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
+    width: 13px; height: 13px;
     border-radius: 999px;
-    background: var(--amber);
+    background: var(--accent);
     border: none;
   }
 
-  :focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+  /* --- three words ----------------------------------------------------- */
+
+  .words-block { display: flex; flex-direction: column; gap: 11px; }
+
+  .words {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 9px;
+  }
+
+  .words input {
+    width: 100%;
+    padding: 13px 12px;
+    text-align: center;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    transition: border-color 0.2s, background var(--shift), color var(--shift);
+  }
+
+  .words input::placeholder { color: var(--faint); opacity: 0.75; }
+  .words input:focus { border-color: var(--accent); outline: none; }
+
+  .reading {
+    margin: 0;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: var(--faint);
+    min-height: 15px;
+  }
 
   .status {
     margin: 0;
-    min-height: 18px;
+    text-align: center;
     font-family: var(--mono);
-    font-size: 11.5px;
-    line-height: 1.5;
-    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--dim);
+    min-height: 17px;
+    transition: color var(--shift);
   }
 
-  .status[data-tone="error"] { color: var(--alert); }
+  .status[data-tone="error"] { color: oklch(0.7 0.17 28); }
+
+  /* --- what is happening, kept quiet ----------------------------------- */
 
   .readout {
     margin: 0;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 18px;
-    padding: 20px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--panel);
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 7px 18px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--faint);
   }
 
-  .readout dt {
+  .readout div { display: flex; gap: 7px; align-items: baseline; }
+  .readout dt { letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.65; }
+  .readout dd { margin: 0; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .readout dd.progression, .readout dd.palette { color: var(--accent); transition: color var(--shift); }
+
+  .footnote {
+    margin: 0;
+    text-align: center;
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.14em;
+    font-size: 10.5px;
+    line-height: 1.85;
+    color: var(--faint);
+    opacity: 0.8;
+  }
+
+  .footnote a { color: inherit; text-decoration-color: var(--line); }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    body::before, body::after { animation: none; }
+    .play, .play:hover { transition: none; transform: none; animation: none; }
+    :root { --shift: 0.01s; }
+  }
+</style>
+<style>
+  /* On top of the shared theme: the live page keeps its scope, which reads
+     the signal directly because there is no <audio> element in its path to
+     protect. */
+  .scope-wrap { height: 150px; margin: -6px 0 -2px; }
+  canvas#scope-live { display: block; width: 100%; height: 100%; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--text-faint);
+    color: var(--faint);
   }
 
-  .readout dd {
-    margin: 8px 0 0;
+  .regen {
     font-family: var(--mono);
-    font-size: 15px;
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    padding: 11px 18px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
   }
 
-  .readout dd.progression { color: var(--amber); font-size: 13px; }
+  .regen:hover { border-color: var(--accent); color: var(--accent); }
+
+  .transport-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
 
   .layers {
     margin: 0;
+    text-align: center;
     font-family: var(--mono);
-    font-size: 11.5px;
+    font-size: 10.5px;
     line-height: 1.9;
-    color: var(--text-faint);
+    color: var(--faint);
   }
 
-  .layers b { color: var(--text-dim); font-weight: 400; }
-
-  @media (max-width: 520px) {
-    .readout { grid-template-columns: repeat(2, 1fr); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .play { transition: none; }
-  }
+  .layers b { color: var(--dim); font-weight: 400; }
 </style>
 </head>
 <body>
+<canvas id="ambient" aria-hidden="true"></canvas>
+<div class="vignette"></div>
 
 <div class="stage">
   <div class="masthead">
     <span class="brand">076 lofi</span>
-    <span class="eyebrow">live engine &middot; desktop</span>
+    <button class="mode" id="mode" aria-label="Switch between day and night">
+      <svg class="moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+
+  <div class="now">
+    <div class="now-name" id="palette" data-idle="true">live engine</div>
+    <div class="now-sub" id="feel">written note by note, as you listen</div>
   </div>
 
   <div class="scope-wrap">
-    <canvas id="scope"></canvas>
+    <canvas id="scope-live"></canvas>
   </div>
 
   <div class="transport">
-    <button class="play" id="play" aria-label="Play">
-      <svg id="play-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l12-7z" fill="currentColor"></path></svg>
+    <button class="play" id="play" aria-label="Play" aria-pressed="false">
+      <svg id="play-icon" width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l12-7z" fill="currentColor"></path></svg>
     </button>
-    <button class="regen" id="regen">new mix</button>
-    <div class="vol">
-      <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8v4h3l4 4V4L6 8H3z" fill="currentColor"></path><path d="M13.5 7a4 4 0 0 1 0 6" stroke="currentColor" stroke-width="1.5" fill="none"></path></svg>
-      <input type="range" id="volume" min="0" max="100" value="80" aria-label="Volume">
+    <div class="transport-row">
+      <button class="regen" id="regen">new mix</button>
+      <div class="vol">
+        <svg width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8v4h3l4 4V4L6 8H3z" fill="currentColor"></path><path d="M13.5 7a4 4 0 0 1 0 6" stroke="currentColor" stroke-width="1.5" fill="none"></path></svg>
+        <input type="range" id="volume" min="0" max="100" value="80" aria-label="Volume">
+      </div>
     </div>
   </div>
 
-  <p class="status" id="status">press play to generate a mix</p>
+  <p class="status" id="status">press play &mdash; every note is written as it sounds</p>
 
   <dl class="readout">
-    <div>
-      <dt>key</dt>
-      <dd id="key">&mdash;</dd>
-    </div>
-    <div>
-      <dt>progression</dt>
-      <dd class="progression" id="progression">&mdash;</dd>
-    </div>
-    <div>
-      <dt>chord</dt>
-      <dd id="chord">&mdash;</dd>
-    </div>
-    <div>
-      <dt>section</dt>
-      <dd id="section">&mdash;</dd>
-    </div>
+    <div><dt>key</dt><dd id="key">&mdash;</dd></div>
+    <div><dt>chord</dt><dd class="progression" id="chord">&mdash;</dd></div>
+    <div><dt>progression</dt><dd id="progression">&mdash;</dd></div>
+    <div><dt>section</dt><dd id="section">&mdash;</dd></div>
   </dl>
 
   <p class="layers">
-    <b>keys</b> &mdash; rootless spread voicings, comped off the beat and rolled, not struck<br>
-    <b>lead</b> &mdash; a motif stated, answered, lifted, then left to breathe<br>
-    <b>bass</b> &mdash; roots, fifths and a step that leads into the next chord<br>
-    <b>drums</b> &mdash; 74 bpm, swung sixteenths, snare behind the beat, ghosts and fills<br>
-    it moves through an arrangement &mdash; intro, groove, breakdown, lift &mdash; and takes a new key each time round.<br>
-    nothing is sampled. it is written live, note by note, as you listen.<br>
-    this is the desktop engine &mdash; it needs the screen on. the front page renders instead.
+    every note written as it sounds, with nothing rendered ahead &mdash; which is why<br>
+    this one needs the screen on. <a href="index.html" style="color:inherit">the front page &rarr;</a> renders instead.
   </p>
 </div>
 

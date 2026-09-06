@@ -1,15 +1,19 @@
-import { pickKey, pickProgression, buildChords } from './theory.js';
 import { createMaster } from './master.js';
 import { createKeys, createLead, createBass, createLightKeys, createLightLead } from './instruments.js';
-import { createDrumKit, drumsForBar } from './drums.js';
-import { compForBar, bassForBar } from './arrange.js';
-import { makeMotif, realiseMotif } from './melody.js';
-import { STEPS_PER_BAR, grooveOffset, accent } from './groove.js';
-import { sectionAt, isCycleStart } from './sections.js';
+import { createDrumKit } from './drums.js';
+import { STEPS_PER_BAR } from './groove.js';
+import { isCycleStart } from './sections.js';
+import { createComposition, renewMaterial, planBar, eventsForBar } from './compose.js';
 
-const BPM = 74;
+// The live engine used to carry its own copy of the composition — its own
+// regenerate, its own per-bar planning, its own fixed tempo and its own
+// single set of instruments. That meant the two pages were different
+// instruments wearing the same name, and every musical change had to be
+// made twice or land on only one of them. They now share compose.js, so the
+// live engine gets the palettes, modes, tempos, voices and drum feels that
+// the rendered stream has.
+const DEFAULT_BPM = 74;
 const FFT_SIZE = 128;
-const BARS_PER_PHRASE = 4;
 
 export class LofiEngine {
   // `options.bypass` names effects to leave out and `options.latencyHint`
@@ -45,7 +49,8 @@ export class LofiEngine {
     this.motif = null;
     this.bar = 0;
     this.plan = null;
-    this.bpm = BPM;
+    // Replaced by the palette's tempo once one is chosen in build().
+    this.bpm = DEFAULT_BPM;
     this.onChordChange = null; // (chord, key) => void
   }
 
@@ -68,9 +73,18 @@ export class LofiEngine {
     this.reverbSend = master.send;
     this.toneFilter = master.tone;
     const light = this.bypass.has('light');
-    this.keys = light ? createLightKeys(this.master) : createKeys(this.master, this.reverbSend, this.bypass);
-    this.lead = light ? createLightLead(this.master) : createLead(this.master, this.reverbSend, this.bypass);
-    this.bass = createBass(this.master);
+    // The palette is chosen before the graph is built, so its instruments
+    // are the ones that get built.
+    if (!this.state) {
+      this.state = createComposition();
+      this.palette = this.state.palette;
+      this.key = this.state.key;
+      this.chords = this.state.chords;
+    }
+    const voicing = (this.palette && this.palette.voices) || {};
+    this.keys = light ? createLightKeys(this.master) : createKeys(this.master, this.reverbSend, this.bypass, 1, voicing.keys);
+    this.lead = light ? createLightLead(this.master) : createLead(this.master, this.reverbSend, this.bypass, 1, voicing.lead);
+    this.bass = createBass(this.master, voicing.bass);
     this.drumKit = createDrumKit(this.master);
 
     // ?bypass=meters removes the analysers, which are polled from the main
@@ -116,6 +130,13 @@ export class LofiEngine {
       throw new Error('the browser did not allow audio to start');
     }
 
+    // The palette has to be chosen before the graph is built, because it
+    // decides which instruments get built. Choosing it after — which is
+    // what calling regenerate() below build() did — left the voices set up
+    // for one identity while the music played at another's tempo, and the
+    // bars then overlapped badly enough that Tone rejected them as going
+    // backwards in time.
+    if (!this.state) this.regenerate();
     this.build();
     if (Tone.getTransport().state === 'started') return;
 
@@ -124,12 +145,10 @@ export class LofiEngine {
     // a stutter or a click. This is a music player, so latency costs nothing.
     Tone.getContext().lookAhead = 0.3;
 
-    Tone.getTransport().bpm.value = BPM;
+    Tone.getTransport().bpm.value = this.palette ? this.palette.bpm : DEFAULT_BPM;
     // Feel is applied per hit in groove.js, so the transport itself stays
     // straight — two swing sources fight each other.
     Tone.getTransport().swing = 0;
-
-    this.regenerate();
 
     if (!this.scheduled) {
       this.stepSeq.start(0);
@@ -189,21 +208,30 @@ export class LofiEngine {
     this.scheduled = false;
   }
 
+  // A different piece, which means a different palette, which means
+  // different instruments — so this only takes effect once the graph is
+  // rebuilt. The page stops and starts around it, which does that.
   regenerate() {
-    this.key = pickKey();
-    this.chords = buildChords(this.key, pickProgression());
-    this.motif = makeMotif();
+    this.state = createComposition();
+    this.palette = this.state.palette;
+    this.key = this.state.key;
+    this.chords = this.state.chords;
     this.bar = 0;
     this.plan = null;
+    if (typeof Tone !== 'undefined' && Tone.getTransport().state === 'started') {
+      Tone.getTransport().bpm.value = this.palette.bpm;
+    }
     return this.chords;
   }
 
   // New material, same place in the arrangement — used at a cycle boundary,
-  // where resetting the bar counter would restart the intro instead.
+  // where resetting the bar counter would restart the intro instead. The
+  // palette is kept: a stream that changed instrument and tempo every three
+  // minutes would be a playlist, not a track.
   regenerateKeepingPosition() {
-    this.key = pickKey();
-    this.chords = buildChords(this.key, pickProgression());
-    this.motif = makeMotif();
+    renewMaterial(this.state);
+    this.key = this.state.key;
+    this.chords = this.state.chords;
     if (this.onMixChange) this.onMixChange();
     return this.chords;
   }
@@ -243,110 +271,74 @@ export class LofiEngine {
     return this.chords[this.bar % this.chords.length] || null;
   }
 
-  // Everything a bar plays is decided once, at its first step.
+  // Everything a bar plays is decided once, at its first step. The
+  // decisions themselves live in compose.js, shared with the renderer.
   _planBar(time) {
-    // A new motif every other phrase: enough repetition to feel composed,
-    // enough change that eight bars in it hasn't become wallpaper.
-    if (this.bar > 0 && this.bar % (BARS_PER_PHRASE * 2) === 0 && Math.random() < 0.7) {
-      this.motif = makeMotif();
-    }
-
     // A fresh key and progression at the top of each cycle: the stream is
     // endless, so it should not be the same eight bars endlessly.
     if (isCycleStart(this.bar)) this.regenerateKeepingPosition();
 
-    const section = sectionAt(this.bar);
-    this.section = section;
+    const plan = planBar(this.state, this.bar);
+    this.plan = plan;
+    this.section = plan.section;
+    this.key = this.state.key;
+    this.chords = this.state.chords;
 
-    const index = this.bar % this.chords.length;
-    const chord = this.chords[index];
-    const nextChord = this.chords[(index + 1) % this.chords.length];
-    const barInPhrase = this.bar % BARS_PER_PHRASE;
-
-    // Open or close the master filter to match the section. Ramped over most
-    // of a bar so it is a change of light rather than a switch being thrown.
+    // Open or close the master filter to match the section, around whatever
+    // the palette already asked for. Ramped over most of a bar so it is a
+    // change of light rather than a switch being thrown.
     if (this.toneFilter) {
-      const cutoff = 1400 + section.tone * 8100;
-      this.toneFilter.frequency.rampTo(cutoff, 2.4, time);
+      const cutoff = (1400 + plan.section.tone * 8100) * (this.palette ? this.palette.tone : 1);
+      this.toneFilter.frequency.rampTo(Math.max(900, Math.min(12000, cutoff)), 2.4, time);
     }
-
-    this.plan = {
-      chord,
-      section,
-      // Thinning the comping on the second half of the phrase keeps eight
-      // bars from landing as the same bar four times.
-      comp: section.voices.keys ? compForBar(chord, barInPhrase !== 2 && section.density > 0.7, Math.random) : [],
-      bass: section.voices.bass ? bassForBar(chord, nextChord, Math.random) : [],
-      // The melody sits out sparse sections entirely, and thins in the rest.
-      melody:
-        section.voices.lead && Math.random() < section.density
-          ? realiseMotif(this.motif, chord, this.key, barInPhrase, Math.random)
-          : [],
-      drums: section.voices.drums
-        ? drumsForBar(section.isLastBar ? 3 : barInPhrase, Math.random)
-        : { kick: [], snare: [], ghosts: [], hats: [], fill: [] },
-    };
 
     if (this.onChordChange) {
       // Scheduled against the bar's own time, not Tone.now(): the draw
       // timeline rejects times that don't advance, and now() sampled inside
       // a lookahead callback doesn't reliably.
-      Tone.getDraw().schedule(() => this.onChordChange(chord, this.key), time);
+      Tone.getDraw().schedule(() => this.onChordChange(plan.chord, this.key), time);
     }
   }
 
+  // One bar, scheduled in one go.
+  //
+  // This used to trigger note by note as the sequence stepped, with its own
+  // copy of the groove offsets, velocities and voice gating. eventsForBar
+  // already does all of that for the renderer, so the live engine now asks
+  // for the same events and simply plays them — which also means it gets
+  // the section entry ramps it never had.
   _onStep(time, step) {
-    if (step === 0) {
-      this._planBar(time);
-      this.bar++;
-    }
+    if (step !== 0) return;
+    this._planBar(time);
+    this.bar++;
     if (!this.plan) return;
 
-    const { chord, comp, bass, melody, drums } = this.plan;
     const off = this.bypass;
+    // From the transport, not from the palette. They are the same in normal
+    // use, but deriving it from the palette meant that anything changing the
+    // transport tempo — a test fast-forwarding, or a future tempo ramp —
+    // spread a bar's events over a different length than the bar actually
+    // lasted, so bars overlapped and Tone rejected the notes as going
+    // backwards in time.
+    const secondsPerBar = (60 / Tone.getTransport().bpm.value) * 4;
+    const events = eventsForBar(this.plan, secondsPerBar);
+    const targets = {
+      kick: this.drumKit.kick, click: this.drumKit.click,
+      snare: this.drumKit.snare, hat: this.drumKit.hat,
+      keys: this.keys, bass: this.bass, lead: this.lead,
+    };
+    // ?bypass= names voices to silence; drums are named as a group.
+    const silenced = (name) =>
+      off.has(name) || (off.has('drums') && ['kick', 'click', 'snare', 'hat'].includes(name));
 
-    // --- drums
-    if (!off.has('drums') && drums.kick.includes(step)) {
-      const at = time + grooveOffset(step, 'kick');
-      const velocity = 0.85 + Math.random() * 0.12;
-      this.drumKit.kick.triggerAttackRelease('A1', '8n', at, velocity);
-      this.drumKit.click.triggerAttackRelease('32n', at, velocity * 0.6);
+    for (const [name, list] of Object.entries(events)) {
+      const voice = targets[name];
+      if (!voice || silenced(name)) continue;
+      for (const event of list) {
+        const at = time + event.time;
+        if (event.note) voice.triggerAttackRelease(event.note, event.duration, at, event.velocity);
+        else voice.triggerAttackRelease(event.duration, at, event.velocity);
+      }
     }
-    if (!off.has('drums') && (drums.snare.includes(step) || drums.fill.includes(step))) {
-      this.drumKit.snare.triggerAttackRelease('16n', time + grooveOffset(step, 'snare'), 0.62 + Math.random() * 0.14);
-    }
-    // A ghost and a backbeat hit on the same step would schedule two notes
-    // on one voice out of order, since the ghost sits earlier in the groove
-    // than the snare — Tone rejects the second as going back in time.
-    const struck = drums.snare.includes(step) || drums.fill.includes(step);
-    if (!off.has('drums') && !struck && drums.ghosts.includes(step)) {
-      this.drumKit.snare.triggerAttackRelease('32n', time + grooveOffset(step, 'ghost'), 0.12 + Math.random() * 0.08);
-    }
-    if (!off.has('drums') && drums.hats.includes(step)) {
-      this.drumKit.hat.triggerAttackRelease('32n', time + grooveOffset(step, 'hat'), accent(step) * (0.5 + Math.random() * 0.16));
-    }
-
-    // --- chords, rolled rather than struck as a block
-    for (const hit of off.has('keys') ? [] : comp) {
-      if (hit.step !== step) continue;
-      const at = time + grooveOffset(step, 'keys');
-      hit.notes.forEach((note, i) => {
-        this.keys.triggerAttackRelease(note, hit.duration, at + i * hit.roll, hit.velocity);
-      });
-    }
-
-    // --- bass
-    for (const hit of off.has('bass') ? [] : bass) {
-      if (hit.step !== step) continue;
-      this.bass.triggerAttackRelease(hit.note, hit.duration, time + grooveOffset(step, 'bass'), hit.velocity);
-    }
-
-    // --- melody
-    for (const note of off.has('lead') ? [] : melody) {
-      if (note.step !== step) continue;
-      this.lead.triggerAttackRelease(note.note, note.duration, time + grooveOffset(step, 'lead'), note.velocity);
-    }
-
-    void chord;
   }
 }
