@@ -145,7 +145,7 @@ export function eventsForBar(plan, secondsPerBar, rng = Math.random) {
   // Never before the start of the bar. The groove pulls some voices earlier
   // than their step, and on step 0 of the very first bar that lands at a
   // negative time, which Web Audio rejects outright.
-  const at = (step, voice) => Math.max(0, step * stepDur + grooveOffset(step, voice));
+  const at = (step, voice) => Math.max(0, step * stepDur + grooveOffset(step, voice, rng));
   const out = { kick: [], click: [], snare: [], hat: [], keys: [], bass: [], lead: [] };
   const { comp, bass, melody, drums } = plan;
 

@@ -331,6 +331,30 @@
   .readout dd { margin: 0; color: var(--dim); font-variant-numeric: tabular-nums; }
   .readout dd.progression, .readout dd.palette { color: var(--accent); transition: color var(--shift); }
 
+  /* Two quiet actions: another track, or a link back to this one. */
+  .track-actions {
+    display: flex;
+    justify-content: center;
+    gap: 9px;
+  }
+
+  .ghost {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    padding: 6px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .ghost:hover { color: var(--accent); border-color: var(--accent); }
+  .ghost[data-done="true"] { color: var(--accent); border-color: var(--accent); }
+
   .footnote {
     margin: 0;
     text-align: center;
@@ -395,7 +419,13 @@
     <div><dt>key</dt><dd id="key">&mdash;</dd></div>
     <div><dt>chord</dt><dd class="progression" id="progression">&mdash;</dd></div>
     <div><dt>section</dt><dd id="section">&mdash;</dd></div>
+    <div><dt>seed</dt><dd id="seed">&mdash;</dd></div>
   </dl>
+
+  <div class="track-actions">
+    <button class="ghost" id="new-track">new track</button>
+    <button class="ghost" id="share">copy link</button>
+  </div>
 
   <p class="footnote">
     composed on this device, note by note &mdash; nothing is sampled<br>
@@ -419,6 +449,10 @@ const stream = new LofiStream({
   // ?texture=1 to hear the lo-fi layer; off until its levels are settled.
   texture: params.get('texture'),
   words: (params.get('words') || '').split(/[ ,]+/).filter(Boolean),
+  // ?seed= brings a particular track back. Absent, one is minted, and the
+  // address bar is deliberately left alone: a reload should be a new piece,
+  // and a link is something you ask for.
+  seed: params.get('seed'),
 });
 window.__stream = stream;
 
@@ -504,6 +538,7 @@ for (const input of wordInputs) {
   input.addEventListener('input', () => {
     showReading(stream.setWords(currentWords()));
     previewPalette();
+    showSeed();
     if (stream.isPlaying && currentWords().join(' ') !== wordsAtStart) {
       setStatus('new words — press play again to write from them');
     }
@@ -512,6 +547,63 @@ for (const input of wordInputs) {
 if (params.get('words')) {
   wordInputs.forEach((el, i) => { el.value = (params.get('words').split(/[ ,]+/)[i] || ''); });
 }
+
+// --- naming a track -----------------------------------------------------
+//
+// The seed is the whole track: identity, key, progression, motif, and every
+// bar's arrangement down to the microtiming. So a link carrying it plays
+// the same piece on someone else's phone, note for note, without a single
+// byte of audio crossing the wire.
+
+function showSeed() {
+  $('seed').textContent = stream.seed;
+}
+
+function trackLink() {
+  const url = new URL(location.href);
+  url.search = '';
+  url.searchParams.set('seed', stream.seed);
+  const words = currentWords();
+  if (words.length) url.searchParams.set('words', words.join(' '));
+  return url.toString();
+}
+
+// A brief confirmation on the button itself. The alternative is a toast,
+// which for a one-word answer is more machinery than the answer is worth.
+function flash(button, text) {
+  const original = button.dataset.label || button.textContent;
+  button.dataset.label = original;
+  button.textContent = text;
+  button.dataset.done = 'true';
+  clearTimeout(button._flash);
+  button._flash = setTimeout(() => {
+    button.textContent = button.dataset.label;
+    button.dataset.done = 'false';
+  }, 1400);
+}
+
+$('share').addEventListener('click', async () => {
+  const link = trackLink();
+  try {
+    await navigator.clipboard.writeText(link);
+    flash($('share'), 'copied');
+  } catch (_) {
+    // No clipboard permission, or an insecure origin. Showing the link is
+    // still an answer; the person can copy it themselves.
+    window.prompt('link to this track', link);
+  }
+});
+
+// Another piece, same words. Without this the only way to a new track is to
+// edit the words, which is the wrong lever when the words were the point.
+$('new-track').addEventListener('click', async () => {
+  const wasPlaying = stream.isPlaying;
+  if (wasPlaying) stop();
+  showReading(stream.setWords(currentWords()));
+  previewPalette();
+  showSeed();
+  if (wasPlaying) await start();
+});
 
 // --- the music, drawn ---------------------------------------------------
 //
@@ -711,6 +803,7 @@ function stop() {
   $('progression').textContent = '—';
   $('status').textContent = 'stopped';
   previewPalette();
+  showSeed();
 }
 
 playBtn.addEventListener('click', () => (stream.isPlaying ? stop() : start()));
@@ -723,6 +816,7 @@ setPlayingUI(false);
 // previewPalette() from there reached scopeColour before its `let` had run.
 showReading(stream.reading);
 previewPalette();
+showSeed();
 void romanLabel;
 </script>
 </body>

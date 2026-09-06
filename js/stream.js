@@ -23,6 +23,7 @@
 import { renderChunk, toWavBlob, TAIL_SECONDS } from './render.js';
 import { createComposition } from './compose.js';
 import { readWords } from './words.js';
+import { makeSeed, normaliseSeed, seedRng, barRngFor } from './seed.js';
 
 // Chunks start short and grow. A first chunk of 52 seconds is 25 seconds of
 // silence after pressing play on a phone, which is far too long to ask of
@@ -147,8 +148,11 @@ export class LofiStream {
     // characterless middle.
     this.reading = readWords(options.words);
     this.sense = this.reading ? this.reading.sense : null;
-    this.state = createComposition(this.sense);
-    this.palette = this.state.palette;
+    // The seed names the track. Supplied, it brings a particular one back;
+    // absent, one is minted so that whatever plays can be linked to after
+    // the fact rather than only before it.
+    this.seed = normaliseSeed(options.seed) || makeSeed();
+    this._compose();
     this.nextBar = 0;
     this.playing = false;
     this.volume = 0.8;
@@ -215,6 +219,7 @@ export class LofiStream {
       bars,
       bypass: this.bypass,
       texture: this.texture,
+      barRng: this.barRng,
     })
       .then((chunk) => {
         const renderSeconds = (performance.now() - startedAt) / 1000;
@@ -382,14 +387,25 @@ export class LofiStream {
 
   // New words mean a new piece: everything already written was written for
   // the old ones. Called while stopped, so nothing has to be thrown away.
-  setWords(words) {
+  setWords(words, seed) {
     this.reading = readWords(words);
     this.sense = this.reading ? this.reading.sense : null;
-    this.state = createComposition(this.sense);
-    this.palette = this.state.palette;
+    // New words are a new piece, so unless a particular one was asked for
+    // by seed, this is a new track and gets a new name.
+    this.seed = normaliseSeed(seed) || makeSeed();
+    this._compose();
     this.nextBar = 0;
     this.nextChunkBars = this.fixedBars || FIRST_CHUNK_BARS;
     return this.reading;
+  }
+
+  // Everything the seed decides, decided. Kept in one place because the
+  // composition and the per-bar generators have to come from the same seed
+  // or a link would restore the harmony and not the arrangement.
+  _compose() {
+    this.state = createComposition(this.sense, seedRng(this.seed, 'composition'));
+    this.palette = this.state.palette;
+    this.barRng = barRngFor(this.seed);
   }
 
   setVolume(percent) {

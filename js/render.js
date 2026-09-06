@@ -58,7 +58,7 @@ function fire(voice, event) {
  * pump against the kick. 0 is clean, 1 is the full amount. Clean is a real
  * choice rather than a degraded mode, and it is also the cheaper render.
  */
-export async function renderChunk({ state, startBar, bars, bypass = new Set(), texture = 1, rng = Math.random }) {
+export async function renderChunk({ state, startBar, bars, bypass = new Set(), texture = 1, rng = Math.random, barRng = null }) {
   const palette = state.palette || null;
   const bpm = palette ? palette.bpm : BPM;
   const secondsPerBar = secondsPerBarAt(bpm);
@@ -82,7 +82,16 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
   // can be made repeatable. Without it, comparing two renders compares two
   // different pieces of music: every measurement of a mix parameter here
   // was noise until this existed.
-  for (let i = 0; i < bars; i++) plans.push(planBar(state, startBar + i, rng));
+  //
+  // `barRng` goes further: a generator per bar and per phase of the bar, so
+  // that a seed names the same track whatever size the chunks came out at.
+  // Without it a fast device and a slow one draw the same numbers in a
+  // different order and play different music from the same link.
+  const draw = barRng || (() => rng);
+  for (let i = 0; i < bars; i++) {
+    const bar = startBar + i;
+    plans.push(planBar(state, bar, draw(bar, 'plan')));
+  }
 
   const buffer = await Tone.Offline(async () => {
     Tone.getTransport().bpm.value = bpm;
@@ -171,7 +180,7 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
         master.tone.frequency.rampTo(Math.max(900, Math.min(12000, cutoff)), 2.4, barStart);
       }
 
-      const events = eventsForBar(plan, secondsPerBar, rng);
+      const events = eventsForBar(plan, secondsPerBar, draw(plan.bar, 'events'));
       for (const [name, list] of Object.entries(events)) {
         const voice = targets[name];
         if (!voice || bypass.has(name)) continue;
@@ -187,7 +196,7 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
       // The record's own surface, and the mix breathing against the kick.
       // Both scheduled bar by bar, because an offline render has no timer to
       // run them from.
-      if (vinyl) vinyl.scheduleBar(barStart, secondsPerBar, rng);
+      if (vinyl) vinyl.scheduleBar(barStart, secondsPerBar, draw(plan.bar, 'texture'));
       if (pump) for (const kick of events.kick) pump.duck(barStart + kick.time);
     }
     Tone.getTransport().start();
