@@ -17,9 +17,15 @@
 // rather than "sunroom" is most of what makes two tracks feel like two
 // tracks rather than one engine having a different afternoon.
 
+// Each palette carries a colour as well as a sound. The page takes its cast
+// from whatever is playing, so a track announces itself before the first
+// bar arrives and two identities never look alike. `hue` is an OKLCH hue
+// angle and `chroma` how far from grey — kept low, because this is a
+// background to leave running, not a poster.
 export const PALETTES = [
   {
     name: 'midnight rhodes',
+    hue: 265, chroma: 0.09, // deep indigo, lamp-lit
     blurb: 'dorian, brushed, close',
     mode: 'dorian',
     family: 'vamp',
@@ -33,6 +39,7 @@ export const PALETTES = [
   },
   {
     name: 'sunroom',
+    hue: 72, chroma: 0.11, // warm honey through a window
     blurb: 'major, light, unhurried',
     mode: 'major',
     family: 'turnaround',
@@ -44,6 +51,7 @@ export const PALETTES = [
   },
   {
     name: 'tape jazz',
+    hue: 38, chroma: 0.12, // tobacco and brass
     blurb: 'mixolydian, boom bap, forward',
     mode: 'mixolydian',
     family: 'turnaround',
@@ -55,6 +63,7 @@ export const PALETTES = [
   },
   {
     name: 'still',
+    hue: 225, chroma: 0.035, // cold slate, almost no colour
     blurb: 'aeolian, no drums, wide',
     mode: 'aeolian',
     family: 'brooding',
@@ -66,6 +75,7 @@ export const PALETTES = [
   },
   {
     name: 'corner shop',
+    hue: 150, chroma: 0.055, // dusty green, strip-lit
     blurb: 'dorian, half-time, plucked',
     mode: 'dorian',
     family: 'parallel',
@@ -77,6 +87,7 @@ export const PALETTES = [
   },
   {
     name: 'blue hour',
+    hue: 245, chroma: 0.07, // the last blue before dark
     blurb: 'aeolian, sparse, distant',
     mode: 'aeolian',
     family: 'vamp',
