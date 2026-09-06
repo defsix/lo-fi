@@ -31,7 +31,15 @@ export const SECONDS_PER_BAR = secondsPerBarAt(BPM);
 // Rendered past the end of the music so reverb and release tails complete
 // rather than being cut off mid-decay. The player overlaps this tail with
 // the next chunk, which is what hides the seam between them.
-export const TAIL_SECONDS = 2.5;
+//
+// Measured across every palette, the tail is below -60dB of the chunk's own
+// peak within 0.92s at worst — so 2.5s meant more than a second and a half
+// of every chunk was silence, still being decoded and mixed alongside the
+// next one. Two simultaneous streams is the only thing a changeover asks of
+// a device that nothing else does, and a phone reported occasional crackle
+// exactly there. 1.4s covers the longest measured decay with room to spare,
+// and halves how long two elements are live.
+export const TAIL_SECONDS = 1.4;
 
 // The voices take note names and Tone durations; drums take a duration and
 // velocity only. One shape here so the loop below stays readable.

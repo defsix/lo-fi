@@ -53,6 +53,15 @@ const HANDOVER_LEAD = 0.12;
 // Playing, still-ringing, and free-to-load. See the note at the top.
 const ELEMENT_COUNT = 3;
 
+// How long two elements are live at a changeover is decided by the length
+// of the rendered tail, not here — see TAIL_SECONDS in render.js. An
+// earlier attempt shortened it by fading the outgoing element's volume
+// instead, which was the wrong tool: HTMLMediaElement.volume can only be
+// stepped, and thirty steps a second put a small discontinuity into the
+// output at each one. Measured, that put jumps into the signal that had not
+// been there before. Rendering a shorter tail achieves the same thing with
+// no steps at all.
+
 // How many rendered chunks to keep in reserve.
 //
 // One was enough while the tab was in front, and not enough behind it: a
@@ -343,15 +352,12 @@ export class LofiStream {
     // element is free and load the chunk after this one onto it.
     this._stageNext();
 
-    // Let the outgoing element finish its tail, then quieten it. This is
-    // about the element; freeing the audio is separate, below.
+    // Let the outgoing tail play itself out — the file ends at silence, so
+    // nothing needs fading. This only catches an element that somehow has
+    // not finished by then.
     setTimeout(() => {
-      if (outgoing !== this._element(this.active) && !outgoing.paused) {
-        // The tail should be silent by now, but "should be" is how clicks
-        // get shipped.
-        fadeOut(outgoing);
-      }
-    }, (TAIL_SECONDS + 1) * 1000);
+      if (outgoing !== this._element(this.active) && !outgoing.paused) fadeOut(outgoing);
+    }, (TAIL_SECONDS + 0.6) * 1000);
 
     // Free the chunk that just finished, once its tail has rung out.
     //
