@@ -716,12 +716,17 @@ const VOICE_STYLE = {
 // what is being shown is the strike, not the sustain.
 const BLOOM_SECONDS = 1.5;
 
-// requestAnimationFrame does not run while the page is hidden, so the
-// drawing simply stops when the screen goes off and starts again when it
-// comes back. That restart lands on a device that has just woken, possibly
-// with a render in flight, and it is the busiest moment in the whole
-// session — so it goes on the same timeline as everything else, rather than
-// being the one thing a glitch report cannot see.
+// requestAnimationFrame is throttled while the page is hidden — not stopped,
+// which is what this code assumed. A report caught it: five frames during
+// forty-four seconds of screen-off, at gaps of 1, 3, 6, 12 and 22 seconds,
+// Firefox backing off but never giving up. Each one is a full clear and
+// redraw at device pixel ratio, on a phone that is supposed to be idle and
+// is already rendering the next chunk.
+//
+// So the loop is now stopped outright when the page goes away, and started
+// again when it comes back. The instrumentation stays, because the restart
+// lands on a device that has just woken and is the busiest moment in a
+// session.
 let lastFrameAt = 0;
 
 function drawScope() {
@@ -795,6 +800,11 @@ function startScope() {
   scope.dataset.on = 'true';
   requestAnimationFrame(drawScope);
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopScope();
+  else if (stream.isPlaying) startScope();
+});
 
 function stopScope() {
   scopeRunning = false;

@@ -132,6 +132,11 @@ const QUEUE_DEPTH = 2;
 // the measured ratios this costs about two percent of the available window.
 const RENDER_AFTER_HANDOVER_MS = 1200;
 
+// How close to the seam to stop moving the handover deadline. Inside this,
+// the timer already stands on a good reading and re-arming only risks
+// jitter from the clock's own resolution.
+const REARM_UNTIL = 1.5;
+
 // Pausing a media element cuts the waveform wherever it happens to be, and
 // a waveform cut mid-cycle is a step change — which is what a click is. So
 // nothing here is ever stopped outright; it is taken to silence first.
@@ -537,18 +542,37 @@ export class LofiStream {
   // already counting down through that. Every later chunk was staged and
   // buffered long in advance, so play() was instant and the timer was right.
   //
-  // Re-arming when sound actually starts cancels it, whatever the device
-  // took. Reading currentTime rather than assuming zero covers the other
-  // order too, where playback had already begun before the promise resolved.
+  // Re-arming once when sound starts was not enough, and the next report
+  // said so: the same -244ms first seam, on a build carrying that fix. The
+  // reason is that Firefox fires `playing` and resolves play() while
+  // currentTime is still zero, and the clock only starts moving a quarter of
+  // a second later — so the one re-arm read zero and recomputed the same
+  // wrong deadline.
+  //
+  // So it is not a moment to correct at, it is a clock to follow. The
+  // deadline is recomputed on every timeupdate, which the media pipeline
+  // fires several times a second from the clock itself, until the seam is
+  // close enough that moving it is worse than leaving it. A clock that
+  // starts late by any amount is picked up as soon as it moves.
   _armHandover(chunk, el) {
-    const arm = () => {
-      if (!this.playing || this.current !== chunk) return;
-      clearTimeout(this.handoverTimer);
-      const remaining = chunk.musicSeconds - (el.currentTime || 0) - this.lead;
-      this.handoverTimer = setTimeout(() => this._handover(), Math.max(0, remaining * 1000));
+    let watching = true;
+    const release = () => {
+      if (!watching) return;
+      watching = false;
+      el.removeEventListener('timeupdate', arm);
+      el.removeEventListener('playing', arm);
     };
+    const arm = () => {
+      if (!this.playing || this.current !== chunk) return release();
+      const remaining = chunk.musicSeconds - (el.currentTime || 0) - this.lead;
+      clearTimeout(this.handoverTimer);
+      this.handoverTimer = setTimeout(() => this._handover(), Math.max(0, remaining * 1000));
+      // Close to the seam, stop moving the deadline and let it stand.
+      if (remaining <= REARM_UNTIL) release();
+    };
+    el.addEventListener('timeupdate', arm);
+    el.addEventListener('playing', arm);
     arm();
-    el.addEventListener('playing', arm, { once: true });
   }
 
   async _handover() {
