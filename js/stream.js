@@ -63,7 +63,13 @@ const RENDER_SAFETY = 0.75;
 // A device where play() really is slow converges on a large lead, and this
 // one converges on almost none, without either being written down here.
 const INITIAL_LEAD = 0.02;
-const MAX_LEAD = 0.4;
+// The lead may be negative, and this took a real report to notice. Clamped
+// at zero it can shorten the wait but never extend it, so an incoming chunk
+// that is still early with the lead already at zero has nothing left to
+// give: a Firefox-on-Android log came back with lead=0 and seam=-38ms twice
+// running, stuck. A negative lead hands over *after* the music ends, into
+// the tail that is ringing anyway — which is what the tail is for.
+const LEAD_BOUND = 0.4;
 
 // How much of each observed error to take out.
 //
@@ -257,6 +263,11 @@ export class LofiStream {
     return c.startBar + Math.floor((within / c.musicSeconds) * c.bars);
   }
 
+  /** For the page to record its own events against the music clock. */
+  note(type, data = {}) {
+    if (this.playing) this._note(type, data);
+  }
+
   _note(type, data) {
     this.log.push({ at: +this.elapsed().toFixed(2), bar: this.bar(), type, ...data });
     if (this.log.length > LOG_LIMIT) this.log.splice(0, this.log.length - LOG_LIMIT);
@@ -317,6 +328,12 @@ export class LofiStream {
       `chunk     ${this.current ? `${this.current.bars} bars from ${this.current.startBar}` : 'none'}`,
       `lead      ${Math.round(this.lead * 1000)} ms   last seam ${this.lastSeam == null ? '—' : Math.round(this.lastSeam * 1000) + ' ms'}`,
       `render    ${this.renderRatio ? this.renderRatio.toFixed(2) + '×' : '—'}  queue ${this.queue.length}  next ${this.nextChunkBars} bars`,
+      `rendering ${
+        this.renderingSince
+          ? `yes — ${this.renderingWhat.bars} bars from ${this.renderingWhat.from}, ` +
+            `${((performance.now() - this.renderingSince) / 1000).toFixed(1)}s in`
+          : 'no'
+      }`,
       `agent     ${navigator.userAgent}`,
       '',
       'time   bar   event',
@@ -354,6 +371,9 @@ export class LofiStream {
     const bars = this.nextChunkBars;
     this.nextBar += bars;
     const startedAt = performance.now();
+    this.renderingSince = startedAt;
+    this.renderingWhat = { from: startBar, bars };
+    this._note('render-start', { from: startBar, bars });
     this.pending = renderChunk({
       state: this.state,
       startBar,
@@ -369,7 +389,8 @@ export class LofiStream {
         chunk.renderSeconds = renderSeconds;
         chunk.ratio = this.renderRatio;
         this.nextChunkBars = this._nextSize(bars);
-        this._note('render', { from: startBar, bars, secs: +renderSeconds.toFixed(2), ratio: +this.renderRatio.toFixed(2) });
+        this.renderingSince = null;
+        this._note('render-done', { from: startBar, bars, secs: +renderSeconds.toFixed(2), ratio: +this.renderRatio.toFixed(2) });
         chunk.url = URL.createObjectURL(toWavBlob(chunk.buffer));
         // The decoded buffer is megabytes and is not needed once encoded.
         chunk.buffer = null;
@@ -573,7 +594,8 @@ export class LofiStream {
       this.lastSeam = offset;
       const before = this.lead;
       if (Math.abs(offset) >= LEAD_DEADBAND) {
-        this.lead = Math.max(0, Math.min(MAX_LEAD, this.lead + offset * LEAD_CORRECTION));
+        const moved = this.lead + offset * LEAD_CORRECTION;
+        this.lead = Math.max(-LEAD_BOUND, Math.min(LEAD_BOUND, moved));
       }
       this._note('seam', {
         off: Math.round(offset * 1000),

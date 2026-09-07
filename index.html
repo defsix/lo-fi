@@ -630,6 +630,9 @@ $('report').addEventListener('click', () => {
   // Marked at the moment of pressing, not when it is read, so the timestamp
   // in the report is the one being complained about.
   const text = stream.report('glitch reported');
+  // After building the text, so this report shows the marks before it and
+  // not itself.
+  stream.note('reported', {});
   copyText(text, $('report'), 'copied');
 });
 
@@ -707,9 +710,23 @@ const VOICE_STYLE = {
 // what is being shown is the strike, not the sustain.
 const BLOOM_SECONDS = 1.5;
 
+// requestAnimationFrame does not run while the page is hidden, so the
+// drawing simply stops when the screen goes off and starts again when it
+// comes back. That restart lands on a device that has just woken, possibly
+// with a render in flight, and it is the busiest moment in the whole
+// session — so it goes on the same timeline as everything else, rather than
+// being the one thing a glitch report cannot see.
+let lastFrameAt = 0;
+
 function drawScope() {
   if (!scopeRunning) return;
   requestAnimationFrame(drawScope);
+
+  const frameAt = performance.now();
+  if (lastFrameAt && frameAt - lastFrameAt > 1000) {
+    stream.note('draw-resumed', { after: Math.round((frameAt - lastFrameAt) / 100) / 10 + 's' });
+  }
+  lastFrameAt = frameAt;
 
   const pos = stream.position();
   sctx.clearRect(0, 0, scopeSize.w, scopeSize.h);
@@ -757,6 +774,7 @@ function drawScope() {
 function startScope() {
   if (scopeRunning) return;
   scopeRunning = true;
+  lastFrameAt = 0;
   scope.dataset.on = 'true';
   requestAnimationFrame(drawScope);
 }
