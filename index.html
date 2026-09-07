@@ -771,8 +771,19 @@ function drawScope() {
   sctx.globalCompositeOperation = 'source-over';
 }
 
+// ?scope=0 turns the drawing off entirely.
+//
+// Two glitch reports from Firefox on Android both landed on a visibility
+// change — one on the screen going off, one on coming back — and neither
+// was near a chunk boundary or inside a render. The drawing loop is the
+// obvious suspect for the waking half, since it restarts there. It is not
+// an obvious suspect for the sleeping half, where it stops. This flag is
+// how to tell those apart rather than argue about them: run the same seed
+// with and without, and see which transitions still glitch.
+const drawingWanted = params.get('scope') !== '0';
+
 function startScope() {
-  if (scopeRunning) return;
+  if (!drawingWanted || scopeRunning) return;
   scopeRunning = true;
   lastFrameAt = 0;
   scope.dataset.on = 'true';
