@@ -24,6 +24,7 @@ import { renderChunk, toWavBlob, TAIL_SECONDS } from './render.js';
 import { createComposition } from './compose.js';
 import { readWords } from './words.js';
 import { makeSeed, normaliseSeed, seedRng, barRngFor } from './seed.js';
+import { BUILD } from './build.js';
 
 // Chunks start short and grow. A first chunk of 52 seconds is 25 seconds of
 // silence after pressing play on a phone, which is far too long to ask of
@@ -332,6 +333,7 @@ export class LofiStream {
     const p = this.palette;
     const lines = [
       note ? `-- ${note} at ${mmss(this.elapsed())}, bar ${this.bar()} --` : '-- lofi report --',
+      `build     ${BUILD.at}  (after ${BUILD.after})`,
       `seed      ${this.seed}`,
       `link      ${location.origin}${location.pathname}?seed=${this.seed}`,
       `track     ${p ? p.name : '?'} · ${this.state ? this.state.key : '?'} ${p ? p.mode : ''} · ${p ? Math.round(p.bpm) : '?'} bpm`,
