@@ -200,6 +200,11 @@ export class LofiStream {
     this.texture = options.texture == null ? 0 : Number(options.texture);
     // ?bars= pins the size and turns the ramp off, for measuring.
     this.fixedBars = Number(options.barsPerChunk) || null;
+    // Per-voice trims in dB, for settling a balance question by ear.
+    this.trim = {
+      keys: Number(options.keysDb) || 0,
+      lead: Number(options.leadDb) || 0,
+    };
     this.nextChunkBars = this.fixedBars || FIRST_CHUNK_BARS;
     // Music seconds produced per second of rendering, measured. Null until
     // the first chunk has been rendered and there is something to measure.
@@ -399,6 +404,7 @@ export class LofiStream {
       bypass: this.bypass,
       texture: this.texture,
       barRng: this.barRng,
+      trim: this.trim,
     })
       .then((chunk) => {
         const renderSeconds = (performance.now() - startedAt) / 1000;

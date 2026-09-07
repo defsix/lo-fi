@@ -160,7 +160,7 @@ export function createLightLead(bus) {
 // there is nothing above 1.6kHz for a filter to either keep or cut. The
 // index is what *creates* them, so it is the only real brightness control
 // this voice has. The filter still moves, a little, to follow.
-export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes', detune = 0) {
+export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes', detune = 0, trimDb = 0) {
   const t = timbre(voice);
   const filter = new Tone.Filter({
     frequency: t.cutoff * Math.pow(toneScale, 0.5),
@@ -190,7 +190,7 @@ export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, v
   // burying the melody they are supposed to sit under. Raw power share says
   // the opposite (5%), because it is dominated by the kick and bass and is
   // no guide to what sits forward.
-  keys.volume.value = t.volume;
+  keys.volume.value = t.volume + trimDb;
   // Two comping hits a bar of four notes each, with a 1.8s release, needs
   // about a dozen voices. Twenty-four was DSP kept alive for nothing.
   keys.maxPolyphony = 12;
@@ -201,7 +201,7 @@ export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, v
   return pinVoices(keys);
 }
 
-export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes', detune = 0) {
+export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes', detune = 0, trimDb = 0) {
   const t = timbre(voice);
   const filter = new Tone.Filter({
     // The lead sits a little brighter than the comping of the same timbre,
@@ -227,7 +227,12 @@ export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1, v
   }).connect(delay);
   // Up a little as the keys come down, so the motif is heard as the line it
   // is rather than as something happening behind the chords.
-  lead.volume.value = t.volume + 2;
+  // +2 was measured full band, where the drums and bass dominate and the
+  // lead read as almost nothing. Measured again through a 500Hz highpass —
+  // which is roughly what a phone speaker passes — the lead is 44% of the
+  // mix and the largest single thing in it. `trimDb` is how that gets tried
+  // by ear rather than argued about.
+  lead.volume.value = t.volume + 2 + trimDb;
   lead.maxPolyphony = 6;
 
   const send = new Tone.Gain(0.34).connect(reverbSend);

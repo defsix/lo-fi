@@ -461,6 +461,9 @@ const stream = new LofiStream({
   // address bar is deliberately left alone: a reload should be a new piece,
   // and a link is something you ask for.
   seed: params.get('seed'),
+  // ?keys= and ?lead= are dB trims, for judging the balance by ear.
+  keysDb: params.get('keys'),
+  leadDb: params.get('lead'),
 });
 window.__stream = stream;
 

@@ -90,7 +90,7 @@ function softenEdges(buffer) {
  * pump against the kick. 0 is clean, 1 is the full amount. Clean is a real
  * choice rather than a degraded mode, and it is also the cheaper render.
  */
-export async function renderChunk({ state, startBar, bars, bypass = new Set(), texture = 1, rng = Math.random, barRng = null }) {
+export async function renderChunk({ state, startBar, bars, bypass = new Set(), texture = 1, rng = Math.random, barRng = null, trim = {} }) {
   const palette = state.palette || null;
   const bpm = palette ? palette.bpm : BPM;
   const secondsPerBar = secondsPerBarAt(bpm);
@@ -196,8 +196,8 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
     const detune = (palette && palette.detune) || 0;
     applied.detune = detune;
     const voices = {
-      keys: light ? null : createKeys(target, reverbSend, bypass, toneScale, voicing.keys, detune),
-      lead: light ? null : createLead(target, reverbSend, bypass, toneScale, voicing.lead, detune),
+      keys: light ? null : createKeys(target, reverbSend, bypass, toneScale, voicing.keys, detune, trim.keys || 0),
+      lead: light ? null : createLead(target, reverbSend, bypass, toneScale, voicing.lead, detune, trim.lead || 0),
       bass: createBass(target, voicing.bass, detune),
     };
 
