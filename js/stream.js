@@ -121,6 +121,16 @@ const ELEMENT_COUNT = 3;
 // against the music stopping.
 const QUEUE_DEPTH = 2;
 
+// How long after a handover to start the next render.
+//
+// The two used to happen in the same breath, which put eleven seconds of
+// solid work at the exact moment a new element was taking hold — the most
+// delicate point in the cycle, and on a phone with the screen off the one
+// place there is least to spare. There is a whole chunk of playback to fit
+// a render into, so it can wait a moment and let the handover settle. At
+// the measured ratios this costs about two percent of the available window.
+const RENDER_AFTER_HANDOVER_MS = 1200;
+
 // Pausing a media element cuts the waveform wherever it happens to be, and
 // a waveform cut mid-cycle is a step change — which is what a click is. So
 // nothing here is ever stopped outright; it is taken to silence first.
@@ -500,9 +510,7 @@ export class LofiStream {
     }
 
     // Hand over at the end of this chunk's music, leaving its tail ringing.
-    clearTimeout(this.handoverTimer);
-    const wait = Math.max(0, chunk.musicSeconds - this.lead) * 1000;
-    this.handoverTimer = setTimeout(() => this._handover(), wait);
+    this._armHandover(chunk, el);
 
     // A backstop for a throttled timer. With the screen off the timer above
     // can fire late, and by then the tail has run out and the gap is real.
@@ -515,6 +523,30 @@ export class LofiStream {
       this._note('ended-first', { from: chunk.startBar });
       this._handover();
     };
+  }
+
+  // When to hand over, counted from the element's own clock rather than from
+  // the moment play() was called.
+  //
+  // Those are not the same instant, and on a phone they can be half a second
+  // apart: a Firefox-on-Android log came back with a first seam of -420ms,
+  // against +2ms for every one after it. The difference is that the first
+  // play of a session has to open the audio output device, and the timer was
+  // already counting down through that. Every later chunk was staged and
+  // buffered long in advance, so play() was instant and the timer was right.
+  //
+  // Re-arming when sound actually starts cancels it, whatever the device
+  // took. Reading currentTime rather than assuming zero covers the other
+  // order too, where playback had already begun before the promise resolved.
+  _armHandover(chunk, el) {
+    const arm = () => {
+      if (!this.playing || this.current !== chunk) return;
+      clearTimeout(this.handoverTimer);
+      const remaining = chunk.musicSeconds - (el.currentTime || 0) - this.lead;
+      this.handoverTimer = setTimeout(() => this._handover(), Math.max(0, remaining * 1000));
+    };
+    arm();
+    el.addEventListener('playing', arm, { once: true });
   }
 
   async _handover() {
@@ -570,7 +602,11 @@ export class LofiStream {
     // Over a couple of hours of listening that is hundreds of megabytes.
     this._retire(finished);
 
-    this._renderAhead();
+    // Deliberately not immediately — see RENDER_AFTER_HANDOVER_MS. The queue
+    // is two deep, so nothing is waiting on this.
+    setTimeout(() => {
+      if (this.playing) this._renderAhead();
+    }, RENDER_AFTER_HANDOVER_MS);
   }
 
   // Where the seam actually landed, and the correction that follows from it.
