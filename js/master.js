@@ -18,7 +18,11 @@
 // `output`, when given, replaces the speakers as the end of the chain. It is
 // how the whole mix can be routed into a MediaStream and played through an
 // <audio> element instead — see background.js for why that is worth doing.
-export function createMaster(bypass = new Set(), output = null) {
+// `makeupDb` lifts this palette to the same loudness as the others, applied
+// at the bus so the limiter still sees it and can catch what it lifts. It is
+// not a mix decision — the palettes were measured 6.6dB apart, which is a
+// listener reaching for the volume every time the track changes.
+export function createMaster(bypass = new Set(), output = null, makeupDb = 0) {
   // Every node built here is tracked so the whole chain can be torn down on
   // stop. Muting the bus is not enough: the reverb send is fed in parallel
   // with it, so a tail keeps sounding after the bus has gone quiet.
@@ -43,9 +47,40 @@ export function createMaster(bypass = new Set(), output = null) {
   // the reported symptom: a clean capture and a distorted live output.
   // A trim after the limiter, because the limiter does not actually hold a
   // ceiling: it is a compressor, and its attack lets transients through
-  // above the threshold. Measured, peaks were reaching -0.5dBFS against a
-  // -6 threshold. This puts a fixed, predictable gap below full scale.
-  const trim = sink(keep(new Tone.Gain(0.7)));
+  // above the threshold. This puts a fixed, predictable gap below full
+  // scale.
+  //
+  // It used to be 0.7, and that was 6.6dB of silence. Measured across every
+  // palette, output peaks sat between -8.6 and -12.5 dBFS — the loud ones
+  // resting on the limiter at -6 and then being turned *down* 3.1dB by this
+  // trim. A phone at full volume was being handed a signal eight decibels
+  // quieter than the file it could have had. At 1.5 the same limiter output
+  // lands at about -2.5 dBFS, which leaves the margin that matters: enough
+  // for the overshoot this trim exists to absorb, and enough for the
+  // inter-sample peaks a resampler adds after we are done.
+  //
+  // The trim alone was not enough once the quiet palettes were brought up
+  // to match: measured, "still" reached 0.0 dBFS and "delta" +0.5. The
+  // limiter is a compressor and its attack lets isolated transients past —
+  // and isolated transients are exactly what a sparse palette is made of.
+  //
+  // So a soft ceiling after it, which is what a limiter is supposed to be.
+  // Below -3dBFS it is a straight line and does nothing at all; above that
+  // it bends, asymptotically, to about -0.5dBFS. Only the overshoot is
+  // touched, and only the top of it.
+  const CEIL = 0.94;
+  const KNEE = 0.7;
+  const safety = sink(
+    keep(
+      new Tone.WaveShaper((x) => {
+        const a = Math.abs(x);
+        if (a <= KNEE) return x;
+        const bent = KNEE + (CEIL - KNEE) * Math.tanh((a - KNEE) / (CEIL - KNEE));
+        return x < 0 ? -bent : bent;
+      }, 4096)
+    )
+  );
+  const trim = keep(new Tone.Gain(1.5)).connect(safety);
   const limiter = bypass.has('limiter')
     ? keep(new Tone.Gain(1)).connect(trim)
     : keep(new Tone.Limiter(-6)).connect(trim);
@@ -81,7 +116,7 @@ export function createMaster(bypass = new Set(), output = null) {
         rolloff: bypass.has('light') ? -12 : -48,
       })).connect(warmth);
 
-  const bus = keep(new Tone.Volume(-4)).connect(rumble);
+  const bus = keep(new Tone.Volume(-4 + makeupDb)).connect(rumble);
 
   // Returned so the arrangement can open and close it per section. Closing
   // the filter is how this music signals a quieter passage without changing

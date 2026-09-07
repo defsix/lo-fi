@@ -67,7 +67,7 @@ export class LofiEngine {
         output = this.streamDestination;
       }
     }
-    const master = createMaster(this.bypass, output);
+    const master = createMaster(this.bypass, output, (this.palette && this.palette.level) || 0);
     this.masterParts = master;
     this.master = master.bus;
     this.reverbSend = master.send;

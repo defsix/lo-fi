@@ -127,7 +127,9 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
 
   const buffer = await Tone.Offline(async () => {
     Tone.getTransport().bpm.value = bpm;
-    const master = createMaster(bypass);
+    // The palette's makeup gain, so every identity arrives at the same
+    // loudness. Measured, not chosen — see `level` in palette.js.
+    const master = createMaster(bypass, null, (palette && palette.level) || 0);
     const paletteTone = palette ? palette.tone : 1;
 
     // Start the filter where the previous chunk left it. Every chunk builds

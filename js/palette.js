@@ -22,9 +22,17 @@
 // bar arrives and two identities never look alike. `hue` is an OKLCH hue
 // angle and `chroma` how far from grey — kept low, because this is a
 // background to leave running, not a poster.
+// `level` is makeup gain in dB, measured rather than guessed. Rendered a
+// full arrangement of each palette and took its RMS: they came out 6.6dB
+// apart, "still" and "delta" sitting six below "tape jazz". That is a
+// listener reaching for the volume knob at every track change. These bring
+// them to a common loudness; the sparseness of the quiet palettes is
+// carried by the arrangement, which is where it belongs, rather than by
+// being quieter.
 export const PALETTES = [
   {
     name: 'midnight rhodes',
+    level: 0.5,
     hue: 265, chroma: 0.09, // deep indigo, lamp-lit
     blurb: 'dorian, brushed, close',
     mode: 'dorian',
@@ -39,6 +47,7 @@ export const PALETTES = [
   },
   {
     name: 'sunroom',
+    level: 0.0,
     hue: 72, chroma: 0.11, // warm honey through a window
     blurb: 'major, light, unhurried',
     mode: 'major',
@@ -51,6 +60,7 @@ export const PALETTES = [
   },
   {
     name: 'tape jazz',
+    level: -0.3,
     hue: 38, chroma: 0.12, // tobacco and brass
     blurb: 'mixolydian, boom bap, forward',
     mode: 'mixolydian',
@@ -63,6 +73,7 @@ export const PALETTES = [
   },
   {
     name: 'still',
+    level: 5.9,
     hue: 225, chroma: 0.035, // cold slate, almost no colour
     blurb: 'aeolian, no drums, wide',
     mode: 'aeolian',
@@ -75,6 +86,7 @@ export const PALETTES = [
   },
   {
     name: 'corner shop',
+    level: 1.3,
     hue: 150, chroma: 0.055, // dusty green, strip-lit
     blurb: 'dorian, half-time, plucked',
     mode: 'dorian',
@@ -87,6 +99,7 @@ export const PALETTES = [
   },
   {
     name: 'blue hour',
+    level: 1.2,
     hue: 245, chroma: 0.07, // the last blue before dark
     blurb: 'aeolian, sparse, distant',
     mode: 'aeolian',
@@ -115,6 +128,7 @@ export const PALETTES = [
     // supported. It is here because it is what the genre sounds like, and it
     // does sound like something.
     name: 'delta',
+    level: 6.3,
     hue: 285, chroma: 0.045, // late violet, nearly out
     blurb: 'aeolian, 432Hz, no drums',
     mode: 'aeolian',
