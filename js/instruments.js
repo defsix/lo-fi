@@ -160,7 +160,7 @@ export function createLightLead(bus) {
 // there is nothing above 1.6kHz for a filter to either keep or cut. The
 // index is what *creates* them, so it is the only real brightness control
 // this voice has. The filter still moves, a little, to follow.
-export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes') {
+export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes', detune = 0) {
   const t = timbre(voice);
   const filter = new Tone.Filter({
     frequency: t.cutoff * Math.pow(toneScale, 0.5),
@@ -175,6 +175,9 @@ export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, v
     : new Tone.Tremolo({ frequency: 2.4, depth: 0.18, wet: 0.25 }).connect(chorus).start();
 
   const keys = new Tone.PolySynth(Tone.FMSynth, {
+    // Concert pitch, in cents. Zero is A=440; a sleep palette asks for
+    // A=432, which is -31.8 cents across every voice at once.
+    detune,
     harmonicity: t.harmonicity,
     modulationIndex: t.modulationIndex * toneScale,
     oscillator: t.oscillator,
@@ -198,7 +201,7 @@ export function createKeys(bus, reverbSend, bypass = new Set(), toneScale = 1, v
   return pinVoices(keys);
 }
 
-export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes') {
+export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1, voice = 'rhodes', detune = 0) {
   const t = timbre(voice);
   const filter = new Tone.Filter({
     // The lead sits a little brighter than the comping of the same timbre,
@@ -212,6 +215,7 @@ export function createLead(bus, reverbSend, bypass = new Set(), toneScale = 1, v
     : new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.24, wet: 0.2 }).connect(filter);
 
   const lead = new Tone.PolySynth(Tone.FMSynth, {
+    detune,
     harmonicity: t.harmonicity,
     modulationIndex: t.modulationIndex * 0.8 * toneScale,
     oscillator: t.oscillator,
@@ -263,7 +267,7 @@ const BASSES = {
   },
 };
 
-export function createBass(bus, voice = 'synth') {
+export function createBass(bus, voice = 'synth', detune = 0) {
   // A pure sine puts all of its energy on the fundamental: it dominates the
   // power spectrum while staying quiet to the ear, and vanishes entirely on
   // a phone speaker that can't reproduce 65Hz. A triangle keeps the weight
@@ -272,6 +276,7 @@ export function createBass(bus, voice = 'synth') {
   const filter = new Tone.Filter({ frequency: b.cutoff, type: 'lowpass', rolloff: -12 }).connect(bus);
 
   const bass = new Tone.MonoSynth({
+    detune,
     oscillator: b.oscillator,
     envelope: b.envelope,
     filterEnvelope: b.filterEnvelope,

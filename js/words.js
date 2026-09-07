@@ -169,6 +169,27 @@ export function readWord(raw) {
  * was typed, so callers can fall back to choosing at random rather than to
  * a flat, characterless middle.
  */
+// Some words are not a lean, they are a request. "sleep" does not mean
+// "somewhat quieter and a little sadder", which is all the four dimensions
+// could ever make of it — it means a different kind of record altogether.
+// So a small set of words name a palette outright, and the rest of the
+// reading goes on working underneath.
+const INTENTS = {
+  delta: ['sleep', 'sleeping', 'asleep', 'slumber', 'insomnia', 'lullaby', 'delta', 'dozing'],
+};
+
+function intentFor(read) {
+  for (const entry of read) {
+    // Matched against what was actually typed and against its stem, but not
+    // through the fuzzy path: "sweep" should not put someone to sleep.
+    const typed = entry.word.toLowerCase();
+    for (const [palette, triggers] of Object.entries(INTENTS)) {
+      if (triggers.includes(typed) || triggers.includes(stem(typed))) return palette;
+    }
+  }
+  return null;
+}
+
 export function readWords(words) {
   const read = (words || []).map(readWord).filter(Boolean);
   if (!read.length) return null;
@@ -177,5 +198,5 @@ export function readWords(words) {
     const sum = read.reduce((total, r) => total + (r.sense[dimension] || 0), 0);
     sense[dimension] = Math.max(-1, Math.min(1, sum / read.length));
   }
-  return { sense, words: read };
+  return { sense, words: read, intent: intentFor(read) };
 }

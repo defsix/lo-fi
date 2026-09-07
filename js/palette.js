@@ -97,6 +97,41 @@ export const PALETTES = [
     tone: 0.8,
     reverb: 1.35,
   },
+  {
+    // Asked for by name, never handed out by chance — see pickPalette. It is
+    // a different proposition from the rest: not music to do something else
+    // to, music to stop to.
+    //
+    // Built to the conventions of the genre rather than to my taste in it:
+    // a slow aeolian drift with no percussion at all, an enormous room, the
+    // filter most of the way shut, and concert pitch moved to A=432 (that is
+    // -31.8 cents, the interval between 432 and 440). The delta layer under
+    // it is a pair of low sine tones a few hertz apart, one to each ear.
+    //
+    // Worth being straight about what that last part does: two tones 3.2Hz
+    // apart produce a 3.2Hz beat, which is real and audible — on headphones
+    // as a binaural beat, on a speaker as a slow physical throb where the
+    // two sum. Whether that entrains anything in the listener is not well
+    // supported. It is here because it is what the genre sounds like, and it
+    // does sound like something.
+    name: 'delta',
+    hue: 285, chroma: 0.045, // late violet, nearly out
+    blurb: 'aeolian, 432Hz, no drums',
+    mode: 'aeolian',
+    family: 'brooding',
+    bpm: 52,
+    voices: { keys: 'rhodes', lead: 'celeste', bass: 'upright' },
+    drums: 'none',
+    tone: 0.55,
+    reverb: 2.1,
+    // Cents from A=440. For the 528Hz lineage instead — C=528 implies
+    // A=444 — this would be +15.7.
+    detune: -31.8,
+    // Hertz between the two ears. Delta is 0.5-4Hz; 3.2 sits in it.
+    binaural: 3.2,
+    // Never chosen at random, only when the words ask for it.
+    onlyByName: true,
+  },
 ];
 
 // How well a palette suits a reading of the three words. Not a filter — the
@@ -123,9 +158,17 @@ function fitness(palette, sense) {
  * but drawn from the best few rather than pinned to the single best, so the
  * words steer without dictating.
  */
-export function pickPalette(sense = null, rng = Math.random) {
-  if (!sense) return PALETTES[Math.floor(rng() * PALETTES.length)];
-  const ranked = [...PALETTES].sort((a, b) => fitness(b, sense) - fitness(a, sense));
+export function pickPalette(sense = null, rng = Math.random, intent = null) {
+  // An intent is a word asking for something by name rather than leaning the
+  // choice. Nothing else can reach these, so "quiet" and "still" still get
+  // the ordinary quiet palettes and only "sleep" gets the sleep one.
+  if (intent) {
+    const named = PALETTES.find((p) => p.name === intent);
+    if (named) return named;
+  }
+  const open = PALETTES.filter((p) => !p.onlyByName);
+  if (!sense) return open[Math.floor(rng() * open.length)];
+  const ranked = open.sort((a, b) => fitness(b, sense) - fitness(a, sense));
   // Weighted towards the front: 55% the best fit, 30% the second, 15% third.
   const roll = rng();
   const index = roll < 0.55 ? 0 : roll < 0.85 ? 1 : 2;

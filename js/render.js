@@ -188,11 +188,58 @@ export async function renderChunk({ state, startBar, bars, bypass = new Set(), t
     // same FM Rhodes, so six palettes announced themselves with one sound.
     const voicing = (palette && palette.voices) || {};
     applied.voices = voicing;
+    // Concert pitch, in cents from A=440, applied to every voice at once so
+    // the whole record moves together rather than going out of tune with
+    // itself.
+    const detune = (palette && palette.detune) || 0;
+    applied.detune = detune;
     const voices = {
-      keys: light ? null : createKeys(target, reverbSend, bypass, toneScale, voicing.keys),
-      lead: light ? null : createLead(target, reverbSend, bypass, toneScale, voicing.lead),
-      bass: createBass(target, voicing.bass),
+      keys: light ? null : createKeys(target, reverbSend, bypass, toneScale, voicing.keys, detune),
+      lead: light ? null : createLead(target, reverbSend, bypass, toneScale, voicing.lead, detune),
+      bass: createBass(target, voicing.bass, detune),
     };
+
+    // The delta layer: two low sine tones a few hertz apart, one to each
+    // ear. On headphones the difference is heard as a beat that is not in
+    // either channel; on a speaker the two sum and it is a slow physical
+    // throb. Both are real; neither is loud. It sits at -32dB, under
+    // everything, and is felt rather than listened to.
+    //
+    // Tuned to the key's own tonic so it is a drone belonging to the piece
+    // rather than a foreign tone laid across it, and phase-continued from
+    // the start of the chunk — a sine restarted at zero phase every chunk
+    // would click at each seam and reset the beat with it.
+    if (palette && palette.binaural) {
+      // Octave 3: 130-250Hz. Low enough to sit under the keys as a drone,
+      // high enough that a phone speaker can actually reproduce it and that
+      // the beat is perceptible — under about 100Hz neither is true.
+      const tonic = Tone.Frequency(state.key + '3').toFrequency() * Math.pow(2, detune / 1200);
+      const spread = palette.binaural;
+      const elapsed = startBar * secondsPerBar;
+      for (const [side, freq] of [[-1, tonic], [1, tonic + spread]]) {
+        // Straight to the bus, not through the tape chain: wobble would
+        // bend the two tones independently and the beat with them.
+        const pan = new Tone.Panner(side).connect(master.bus);
+        const level = new Tone.Gain(0).connect(pan);
+        const osc = new Tone.Oscillator({
+          frequency: freq,
+          type: 'sine',
+          // Where this tone had got to by the time this chunk starts.
+          phase: (((freq * elapsed) % 1) * 360) % 360,
+        }).connect(level);
+        osc.start(0);
+        // Ramped at both ends over 30ms so the drone joins across a seam
+        // instead of stepping, and stopped when the music does rather than
+        // running through the tail, where it would double with the next
+        // chunk's drone for as long as the two overlap.
+        level.gain.setValueAtTime(0, 0);
+        level.gain.linearRampToValueAtTime(0.025, 0.03);
+        level.gain.setValueAtTime(0.025, Math.max(0.03, musicSeconds - 0.03));
+        level.gain.linearRampToValueAtTime(0, musicSeconds);
+        osc.stop(musicSeconds + 0.01);
+      }
+      applied.binaural = { tonic: Math.round(tonic * 100) / 100, spread };
+    }
     const kit = createDrumKit(target);
     const targets = {
       kick: kit.kick, click: kit.click, snare: kit.snare, hat: kit.hat,

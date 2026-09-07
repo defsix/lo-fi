@@ -193,6 +193,7 @@ export class LofiStream {
     // characterless middle.
     this.reading = readWords(options.words);
     this.sense = this.reading ? this.reading.sense : null;
+    this.intent = this.reading ? this.reading.intent : null;
     // The seed names the track. Supplied, it brings a particular one back;
     // absent, one is minted so that whatever plays can be linked to after
     // the fact rather than only before it.
@@ -617,6 +618,7 @@ export class LofiStream {
   setWords(words, seed) {
     this.reading = readWords(words);
     this.sense = this.reading ? this.reading.sense : null;
+    this.intent = this.reading ? this.reading.intent : null;
     // New words are a new piece, so unless a particular one was asked for
     // by seed, this is a new track and gets a new name.
     this.seed = normaliseSeed(seed) || makeSeed();
@@ -630,7 +632,7 @@ export class LofiStream {
   // composition and the per-bar generators have to come from the same seed
   // or a link would restore the harmony and not the arrangement.
   _compose() {
-    this.state = createComposition(this.sense, seedRng(this.seed, 'composition'));
+    this.state = createComposition(this.sense, seedRng(this.seed, 'composition'), null, this.intent);
     this.palette = this.state.palette;
     this.barRng = barRngFor(this.seed);
   }

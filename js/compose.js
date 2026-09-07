@@ -27,11 +27,12 @@ export const STEPS_PER_BAR = 16;
 //
 // Progressions are ordered from brightest to most inward in theory.js, so
 // melancholy selects across that range rather than pretending to compose.
-export function createComposition(sense = null, rng = Math.random, palette = null) {
+export function createComposition(sense = null, rng = Math.random, palette = null, intent = null) {
   // The palette is the track's identity — mode, tempo, harmonic shape,
   // voices, drum feel — chosen once and held. Everything below varies
-  // inside it rather than across it.
-  const chosen = palette || pickPalette(sense, rng);
+  // inside it rather than across it. An intent names one outright: some
+  // words are a request, not a lean.
+  const chosen = palette || pickPalette(sense, rng, intent);
   const key = pickKey(rng);
   const progression = pickProgressionFromFamily(chosen.family, rng, chosen.mode);
   return {
