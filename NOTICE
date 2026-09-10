@@ -1,0 +1,24 @@
+This project bundles third-party components. Their licences are reproduced
+where they live, as each licence requires.
+
+Tone.js 14.9.17 — MIT License
+  vendor/tone.js, licence in vendor/Tone.js.LICENSE.txt
+  Copyright (c) 2014-2025 Yotam Mann
+  https://github.com/Tonejs/Tone.js
+
+Space Grotesk — SIL Open Font License 1.1
+  fonts/space-grotesk-*.woff2, licence in fonts/OFL.txt
+  Copyright 2020 The Space Grotesk Project Authors
+  https://github.com/floriankarsten/space-grotesk
+
+Space Mono — SIL Open Font License 1.1
+  fonts/space-mono-*.woff2, licence in fonts/OFL.txt
+  Copyright 2016 The Space Mono Project Authors
+  https://github.com/googlefonts/spacemono
+
+Everything else — the engine, the composition, the pages and the artwork —
+is MIT licensed; see LICENSE.
+
+No audio is sampled from any recording. Every sound the site makes is
+synthesised at runtime from the code in js/, so the music it produces
+carries no third-party rights.
