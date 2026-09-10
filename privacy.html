@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>076 lofi &mdash; privacy</title>
+<meta name="description" content="What this site collects, which is almost nothing.">
+<meta name="theme-color" content="#141110">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preload" href="fonts/space-grotesk-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root {
+    --hue: 40;
+    --chroma: 0.05;
+    --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+    /* A colour change should feel like light shifting in a room, not a
+       theme being switched. */
+    --shift: 2.4s var(--ease);
+  }
+
+  /* Night, and the default: this is a thing to leave running in the dark. */
+  :root, :root[data-mode="night"] {
+    --bg: oklch(0.145 calc(var(--chroma) * 0.55) var(--hue));
+    --bg-far: oklch(0.10 calc(var(--chroma) * 0.4) var(--hue));
+    --panel: oklch(0.21 calc(var(--chroma) * 0.5) var(--hue) / 0.55);
+    --line: oklch(0.34 calc(var(--chroma) * 0.45) var(--hue) / 0.5);
+    --text: oklch(0.96 0.012 var(--hue));
+    --dim: oklch(0.74 0.022 var(--hue));
+    --faint: oklch(0.55 0.02 var(--hue));
+    --accent: oklch(0.82 calc(var(--chroma) + 0.06) var(--hue));
+    --accent-soft: oklch(0.82 calc(var(--chroma) + 0.06) var(--hue) / 0.15);
+    --glow: oklch(0.7 calc(var(--chroma) + 0.05) var(--hue) / 0.30);
+  }
+
+  :root[data-mode="day"] {
+    --bg: oklch(0.955 calc(var(--chroma) * 0.30) var(--hue));
+    --bg-far: oklch(0.90 calc(var(--chroma) * 0.42) var(--hue));
+    --panel: oklch(1 0 0 / 0.5);
+    --line: oklch(0.55 calc(var(--chroma) * 0.35) var(--hue) / 0.32);
+    --text: oklch(0.24 0.03 var(--hue));
+    --dim: oklch(0.44 0.035 var(--hue));
+    --faint: oklch(0.60 0.03 var(--hue));
+    --accent: oklch(0.50 calc(var(--chroma) + 0.05) var(--hue));
+    --accent-soft: oklch(0.50 calc(var(--chroma) + 0.05) var(--hue) / 0.12);
+    --glow: oklch(0.72 calc(var(--chroma) + 0.04) var(--hue) / 0.34);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: max(22px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    transition: background var(--shift), color var(--shift);
+    overflow-x: hidden;
+  }
+
+  /* Two soft pools of light behind everything. They drift very slowly —
+     slow enough that you notice only that the room is not static. */
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    inset: -30vmax;
+    z-index: -1;
+    background: radial-gradient(38vmax 38vmax at 30% 28%, var(--glow), transparent 68%);
+    transition: background var(--shift);
+    animation: drift 54s var(--ease) infinite alternate;
+    pointer-events: none;
+  }
+
+  body::after {
+    background: radial-gradient(44vmax 44vmax at 72% 74%, var(--glow), transparent 70%);
+    animation-duration: 78s;
+    animation-direction: alternate-reverse;
+    opacity: 0.7;
+  }
+
+  @keyframes drift {
+    from { transform: translate3d(-3%, -2%, 0) scale(1); }
+    to   { transform: translate3d(4%, 3%, 0) scale(1.12); }
+  }
+
+  /* Deeper at the edges, so the page reads as a space rather than a card. */
+  /* The music, drawn from its own score. It sits behind the content as
+     part of the room's light rather than as a panel of bars. */
+  #scope {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 1.2s var(--ease);
+    pointer-events: none;
+  }
+
+  #scope[data-on="true"] { opacity: 1; }
+
+  .vignette {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(120% 90% at 50% 40%, transparent 42%, var(--bg-far) 100%);
+    transition: background var(--shift);
+    pointer-events: none;
+  }
+
+  .stage {
+    width: min(100%, 520px);
+    margin: auto 0;
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+  }
+
+  .masthead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .brand {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+    transition: color var(--shift);
+  }
+
+  .mode {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+  }
+
+  .mode:hover { color: var(--accent); border-color: var(--accent); }
+  .mode svg { display: block; }
+  :root[data-mode="day"] .mode .moon { display: none; }
+  :root:not([data-mode="day"]) .mode .sun { display: none; }
+
+
+  /* --- the note itself ------------------------------------------------ */
+
+  .prose { display: flex; flex-direction: column; gap: 26px; }
+
+  h1 {
+    margin: 0;
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: clamp(30px, 8vw, 44px);
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    color: var(--text);
+  }
+
+  .lede {
+    margin: 0;
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--dim);
+  }
+
+  section { display: flex; flex-direction: column; gap: 9px; }
+
+  h2 {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    transition: color var(--shift);
+  }
+
+  p {
+    margin: 0;
+    font-family: var(--sans);
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: var(--dim);
+  }
+
+  p + p { margin-top: 8px; }
+
+  a { color: var(--text); text-decoration-color: var(--line); text-underline-offset: 3px; }
+  a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    color: var(--text);
+  }
+
+  .updated {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--faint);
+  }
+</style>
+</head>
+<body>
+<div class="vignette"></div>
+
+<div class="stage">
+  <div class="masthead">
+    <a class="brand" href="./">076 lofi</a>
+    <button class="mode" id="mode" aria-label="Switch between day and night">
+      <svg class="moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+
+  <div class="prose">
+    <h1>Privacy</h1>
+    <p class="lede">
+      There is no account to make, nothing to sign up for, and no analytics.
+      The music is composed on your device and never leaves it. This page is
+      short because there is very little to tell you.
+    </p>
+
+    <section>
+      <h2>What is collected</h2>
+      <p>
+        Nothing. No accounts, no analytics, no tracking pixels, no advertising,
+        no cookies. Nothing you type into the three word fields is sent
+        anywhere &mdash; the words are read by code running in your browser and
+        used to choose a key, a tempo and a set of instruments.
+      </p>
+    </section>
+
+    <section>
+      <h2>What is stored on your device</h2>
+      <p>
+        One value, in your browser&rsquo;s local storage: whether you chose the
+        day or the night theme. It stays on your device, is readable only by
+        this site, and is removed if you clear your browsing data. Nothing else
+        is stored, and no cookies are set.
+      </p>
+    </section>
+
+    <section>
+      <h2>The music</h2>
+      <p>
+        Every note is generated in your browser and written to audio there.
+        Nothing is uploaded, nothing is recorded, and the microphone is never
+        requested. Nothing is sampled from anyone else&rsquo;s recordings
+        either &mdash; the instruments are synthesised from scratch, so what
+        you hear has no copyright owner but the code that made it.
+      </p>
+    </section>
+
+    <section>
+      <h2>Other companies</h2>
+      <p>
+        None, while the page is running. The typefaces are served from this
+        site rather than from a font CDN, specifically so that loading the page
+        does not hand your IP address to a third party.
+      </p>
+      <p>
+        The files themselves are hosted on GitHub Pages, so GitHub&rsquo;s
+        servers see the request that fetches them &mdash; including your IP
+        address &mdash; in the same way any web server sees any request for a
+        file. That is covered by
+        <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub&rsquo;s
+        privacy statement</a>.
+      </p>
+    </section>
+
+    <section>
+      <h2>Sleep mode</h2>
+      <p>
+        Typing <code>sleep</code> gives you a slower, quieter piece tuned to
+        A&nbsp;=&nbsp;432&nbsp;Hz with two low tones a few hertz apart, one to
+        each ear. That is a real and audible effect, and it is what this kind
+        of music is conventionally made of.
+      </p>
+      <p>
+        It is not a medical or therapeutic claim. The evidence that tones like
+        these change anything in the listener is weak, and nothing here is
+        offered as a treatment for anything. It is music to fall asleep to, in
+        the same sense that any quiet record is.
+      </p>
+    </section>
+
+    <section>
+      <h2>Changes and contact</h2>
+      <p>
+        If this ever changes &mdash; if anything is ever measured, stored or
+        sent &mdash; it will say so here first. Questions, or a correction to
+        anything on this page, are welcome at
+        <a href="https://github.com/defsix/lo-fi/issues">the project&rsquo;s issue tracker</a>.
+      </p>
+      <p class="updated">Last updated 10 September 2026.</p>
+    </section>
+
+    <p class="updated"><a href="./">&larr; back to the music</a></p>
+  </div>
+</div>
+
+<script type="module">
+// The theme choice, shared with the player. Same key, so a preference set on
+// one page is honoured on the other.
+const MODE_KEY = 'lofi-mode';
+function setMode(mode) {
+  document.documentElement.dataset.mode = mode;
+  try { localStorage.setItem(MODE_KEY, mode); } catch (_) { /* private window */ }
+}
+let saved = null;
+try { saved = localStorage.getItem(MODE_KEY); } catch (_) { /* private window */ }
+setMode(saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'day' : 'night'));
+document.getElementById('mode').addEventListener('click', () => {
+  setMode(document.documentElement.dataset.mode === 'day' ? 'night' : 'day');
+});
+</script>
+</body>
+</html>

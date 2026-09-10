@@ -78,6 +78,16 @@ html = html
   .replace(/<meta\s+(?:charset|name="viewport")[^>]*>\s*/gi, '')
   // Icons and the manifest are same-origin files the artifact host doesn't serve.
   .replace(/<link\s+rel="(?:icon|apple-touch-icon|manifest)"[^>]*>\s*/gi, '')
+  // Same for the self-hosted fonts. The site serves its own so that no
+  // visitor's IP reaches a third party; the artifact has no origin to serve
+  // them from, and is a development tool rather than something anyone is
+  // pointed at, so here it falls back to the CDN its host already allows.
+  .replace(/<link\s+rel="preload"[^>]*\.woff2[^>]*>\s*/gi, '')
+  .replace(
+    /<link\s+rel="stylesheet"\s+href="fonts\/fonts\.css">/i,
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?' +
+      'family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">'
+  )
   .replace(TONE_TAG, () => `<script>\n${tone}\n</script>`)
   .replace(PAGE_TAG, () => `<script>\n${bundle}\n</script>`);
 
